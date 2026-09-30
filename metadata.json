@@ -1,0 +1,8 @@
+{
+  "name": "Remix levis-report",
+  "description": "Official Levi\u0027s South Africa Online portal for Automated Weekly Business Reviews and Operational Analytics",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,69 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() { return request.auth != null; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    
+    function isValidReport(data) {
+      return data.keys().hasAll(['createdAt', 'authorId', 'data'])
+        && data.keys().size() == 3
+        && data.createdAt == request.time
+        && data.authorId == request.auth.uid
+        && data.authorId is string && data.authorId.size() <= 128
+        && data.data is map;
+    }
+    
+    function isValidReportUpdate(data) {
+      return data.keys().hasAll(['createdAt', 'authorId', 'data'])
+        && data.keys().size() == 3
+        && data.createdAt == existing().createdAt
+        && data.authorId == existing().authorId
+        && data.authorId is string && data.authorId.size() <= 128
+        && data.data is map;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'createdAt'])
+        && data.keys().size() == 2
+        && data.email == request.auth.token.email
+        && data.email is string && data.email.size() <= 256
+        && data.createdAt == request.time;
+    }
+
+    function isValidCheckpoint(data) {
+      return data.keys().hasAll(['updatedAt', 'data'])
+        && data.data is map;
+    }
+
+    match /reports/{reportId} {
+      // Anyone with the specific UUID can view the report (allows sharing the link)
+      allow get: if isValidId(reportId);
+      allow list: if false;
+      allow create: if isSignedIn() && isValidId(reportId) && request.auth.token.email_verified == true && isValidReport(incoming());
+      allow update: if isSignedIn() && isValidId(reportId) && existing().authorId == request.auth.uid && isValidReportUpdate(incoming());
+      allow delete: if isSignedIn() && existing().authorId == request.auth.uid;
+    }
+
+    match /checkpoints/{checkpointId} {
+      // Read access to checkpoint is open for report viewers
+      allow get: if isValidId(checkpointId);
+      allow list: if false;
+      allow create, update: if isValidId(checkpointId) && isValidCheckpoint(incoming());
+      allow delete: if isSignedIn();
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && request.auth.uid == userId;
+      allow list: if false;
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && request.auth.token.email_verified == true && isValidUser(incoming());
+      // No updates for users right now
+      allow update, delete: if false;
+    }
+  }
+}

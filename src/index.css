@@ -1,0 +1,110 @@
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-serif: "Playfair Display", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-display: "Bebas Neue", cursive;
+}
+
+@import "tailwindcss";
+
+@layer base {
+  body {
+    @apply font-sans;
+  }
+}
+
+@layer utilities {
+  .bg-noise {
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+    opacity: 0.05;
+  }
+}
+
+@theme {
+  --color-levisblue: #003876;
+  --color-levisred: #C41230;
+  --color-trendgreen: #228B22;
+  --color-trendred: #CD2626;
+  --color-trendamber: #CD950C;
+  --color-sectiongray: #F0F0F0;
+  --color-cardbg: #F8F9FA;
+  --color-barwarehouse: #CC8529;
+  --color-barcourier: #2969A0;
+  --color-barinventory: #23776E;
+  --color-barother: #808285;
+}
+
+html,
+body,
+#root {
+  background-color: #E5E7EB;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+/* A4 Landscape Canvas for Web */
+.a4-canvas {
+  width: 297mm;
+  max-width: 100%;
+  min-height: 210mm;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+  box-sizing: border-box;
+}
+
+/* Print Overrides */
+@page {
+  size: A4 landscape;
+  margin: 12mm;
+}
+
+@media print {
+  body {
+    background-color: white;
+    min-height: auto;
+  }
+  .a4-canvas {
+    width: 100%;
+    min-height: auto;
+    padding: 0;
+    box-shadow: none;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .no-print {
+    display: none !important;
+  }
+  #wbr-page-1,
+  #wbr-page-2,
+  #wbr-page-3 {
+    page-break-after: always;
+    break-after: page;
+  }
+  #wbr-page-2,
+  #wbr-page-3,
+  #wbr-page-4 {
+    page-break-before: always;
+    break-before: page;
+  }
+}
+
+.markdown-bullets ul {
+  list-style-type: disc;
+  padding-left: 1rem;
+}
+.markdown-bullets li {
+  margin-bottom: 0.5rem;
+}
+
+/* Weekly Reports Archive & Interactive Preview Cards */
+.weekly-reports-archive-page .report-preview-card {
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease, background-color 0.25s ease;
+  will-change: transform, box-shadow;
+}
+
+.weekly-reports-archive-page .report-preview-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 28px -6px rgba(0, 56, 118, 0.12), 0 6px 12px -3px rgba(0, 0, 0, 0.05);
+}
