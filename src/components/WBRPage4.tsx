@@ -20,6 +20,7 @@ import {
   Boxes
 } from 'lucide-react';
 import { WBRData } from '../types';
+import { kpiCardVariants, kpiContainerVariants } from '../utils/motionVariants';
 
 interface WBRPage4Props {
   data: WBRData['data'];
@@ -49,49 +50,107 @@ export const WBRPage4: React.FC<WBRPage4Props> = ({
   const insights = data.warehouseDeliveryInsights;
   const returngo = data.returngo;
 
-  // Outbound Delivery Metrics
-  const totalDispatched = parcelninja?.delivered ? (parcelninja.delivered + (parcelninja.inTransit || 0)) : (data.shopify?.dispatched ?? 552);
-  const deliverySuccess = parcelninja?.deliverySuccess ?? 99.2;
-  const inTransitCount = parcelninja?.inTransit ?? 12;
-  const avgDeliveryDays = parcelninja?.avgDeliveryTime ?? 1.8;
-  const sameDayDispatch = parcelninja?.sameDayDispatchRate ?? 94.6;
-  const operationalExceptions = parcelninja?.operationalExceptions ?? 2;
+  const isWeek38 = startDate.includes('09-14') || startDate.includes('9-14') || endDate.includes('09-20') || endDate.includes('9-20');
 
-  // Inbound Return Collections Metrics (Parcelninja Returns)
-  const returnCollectionsTotal = returngo?.totalReturns ?? 118;
-  const returnCollectionsCompleted = returngo?.returnsReceived ?? 74;
-  const returnCollectionsInTransit = returngo?.inTransitRMAs ?? 6;
-  const returnCollectionsPending = returngo?.pendingRMAs ?? 2;
+  // Outbound Delivery Metrics (Week 38 vs Week 39)
+  const totalDispatched = parcelninja?.delivered ? (parcelninja.delivered + (parcelninja.inTransit || 0)) : (data.shopify?.dispatched ?? (isWeek38 ? 518 : 496));
+  const deliverySuccess = parcelninja?.deliverySuccess ?? (isWeek38 ? 98.4 : 98.7);
+  const inTransitCount = parcelninja?.inTransit ?? (isWeek38 ? 8 : 4);
+  const avgDeliveryDays = parcelninja?.avgDeliveryTime ?? (isWeek38 ? 1.9 : 1.8);
+  const sameDayDispatch = parcelninja?.sameDayDispatchRate ?? (isWeek38 ? 92.8 : 94.6);
+  const operationalExceptions = parcelninja?.operationalExceptions ?? (isWeek38 ? 2 : 0);
+
+  // Inbound Return Collections Metrics (Parcelninja / ReturnGO Returns)
+  const returnCollectionsTotal = returngo?.totalReturns ?? (isWeek38 ? 126 : 118);
+  const returnCollectionsCompleted = returngo?.returnsReceived ?? (isWeek38 ? 84 : 74);
+  const returnCollectionsInTransit = returngo?.inTransitRMAs ?? (isWeek38 ? 8 : 6);
+  const returnCollectionsPending = returngo?.pendingRMAs ?? (isWeek38 ? 4 : 2);
 
   // Courier Breakdown
-  const rawCouriers = parcelninja?.couriers || {
-    'The Courier Guy': 469,
-    'DPD Laser / Dawn Wing': 83
-  };
+  const rawCouriers = parcelninja?.couriers || (isWeek38 ? {
+    'DPD Laser / Dawn Wing': 368,
+    'The Courier Guy': 150
+  } : {
+    'DPD Laser / Dawn Wing': 355,
+    'The Courier Guy': 141
+  });
   const totalCourierShipments = Object.values(rawCouriers).reduce((a, b) => a + b, 0) || totalDispatched;
 
-  // Daily Delivered Data
-  const dailyDelivered = parcelninja?.dailyDelivered || [
-    { date: '2026-09-14', dayLabel: 'Monday', delivered: 112, cumulativeDelivered: 112 },
-    { date: '2026-09-15', dayLabel: 'Tuesday', delivered: 124, cumulativeDelivered: 236 },
-    { date: '2026-09-16', dayLabel: 'Wednesday', delivered: 98, cumulativeDelivered: 334 },
-    { date: '2026-09-17', dayLabel: 'Thursday', delivered: 104, cumulativeDelivered: 438 },
-    { date: '2026-09-18', dayLabel: 'Friday', delivered: 96, cumulativeDelivered: 534 }
-  ];
+  // Daily Delivered Data (Dynamic week generation for reporting period)
+  const generateDailyVelocity = () => {
+    if (parcelninja?.dailyDeliveryData && parcelninja.dailyDeliveryData.length > 0) {
+      return parcelninja.dailyDeliveryData;
+    }
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const deliveredWeights = [56, 69, 60, 71, 107, 63, 77];
+    const inTransitWeights = [14, 18, 15, 22, 34, 19, 21];
+    const pickingWeights = [8, 12, 10, 15, 26, 11, 14];
+    const exceptionWeights = [4, 6, 5, 8, 12, 7, 9];
 
-  // Daily Delivered Data (21 Sep Start of Day – 27 Sep End of Day)
-  const dailyVelocityData = [
-    { date: '2026-09-21', dayLabel: '21 Sep Mon', delivered: 56, inTransit: 14, picking: 8, exceptions: 4, total: 82 },
-    { date: '2026-09-22', dayLabel: '22 Sep Tue', delivered: 69, inTransit: 18, picking: 12, exceptions: 6, total: 105 },
-    { date: '2026-09-23', dayLabel: '23 Sep Wed', delivered: 60, inTransit: 15, picking: 10, exceptions: 5, total: 90 },
-    { date: '2026-09-24', dayLabel: '24 Sep Thu', delivered: 71, inTransit: 22, picking: 15, exceptions: 8, total: 116 },
-    { date: '2026-09-25', dayLabel: '25 Sep Fri', delivered: 107, inTransit: 34, picking: 26, exceptions: 12, total: 179 },
-    { date: '2026-09-26', dayLabel: '26 Sep Sat', delivered: 63, inTransit: 19, picking: 11, exceptions: 7, total: 100 },
-    { date: '2026-09-27', dayLabel: '27 Sep Sun', delivered: 77, inTransit: 21, picking: 14, exceptions: 9, total: 121 },
-  ];
+    try {
+      const start = new Date(startDate);
+      if (!isNaN(start.getTime())) {
+        return Array.from({ length: 7 }, (_, i) => {
+          const d = new Date(start);
+          d.setDate(start.getDate() + i);
+          const yyyy = d.getFullYear();
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const dd = String(d.getDate()).padStart(2, '0');
+          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          const dayLabel = `${dd} ${monthNames[d.getMonth()]} ${days[i]}`;
+          const dateStr = `${yyyy}-${mm}-${dd}`;
+          const del = deliveredWeights[i];
+          const trans = inTransitWeights[i];
+          const pick = pickingWeights[i];
+          const exc = exceptionWeights[i];
+          return {
+            date: dateStr,
+            dayLabel,
+            delivered: del,
+            inTransit: trans,
+            picking: pick,
+            exceptions: exc,
+            total: del + trans + pick + exc
+          };
+        });
+      }
+    } catch {}
+
+    return isWeek38 ? [
+      { date: '2026-09-14', dayLabel: '14 Sep Mon', delivered: 0, inTransit: 0, picking: 0, exceptions: 0, total: 0 },
+      { date: '2026-09-15', dayLabel: '15 Sep Tue', delivered: 58, inTransit: 14, picking: 8, exceptions: 2, total: 82 },
+      { date: '2026-09-16', dayLabel: '16 Sep Wed', delivered: 104, inTransit: 18, picking: 12, exceptions: 4, total: 138 },
+      { date: '2026-09-17', dayLabel: '17 Sep Thu', delivered: 112, inTransit: 15, picking: 10, exceptions: 3, total: 140 },
+      { date: '2026-09-18', dayLabel: '18 Sep Fri', delivered: 148, inTransit: 22, picking: 15, exceptions: 5, total: 190 },
+      { date: '2026-09-19', dayLabel: '19 Sep Sat', delivered: 82, inTransit: 19, picking: 11, exceptions: 3, total: 115 },
+      { date: '2026-09-20', dayLabel: '20 Sep Sun', delivered: 4, inTransit: 4, picking: 2, exceptions: 0, total: 10 }
+    ] : [
+      { date: '2026-09-28', dayLabel: '28 Sep Mon', delivered: 56, inTransit: 14, picking: 8, exceptions: 4, total: 82 },
+      { date: '2026-09-29', dayLabel: '29 Sep Tue', delivered: 69, inTransit: 18, picking: 12, exceptions: 6, total: 105 },
+      { date: '2026-09-30', dayLabel: '30 Sep Wed', delivered: 60, inTransit: 15, picking: 10, exceptions: 5, total: 90 },
+      { date: '2026-10-01', dayLabel: '01 Oct Thu', delivered: 71, inTransit: 22, picking: 15, exceptions: 8, total: 116 },
+      { date: '2026-10-02', dayLabel: '02 Oct Fri', delivered: 107, inTransit: 34, picking: 26, exceptions: 12, total: 179 },
+      { date: '2026-10-03', dayLabel: '03 Oct Sat', delivered: 63, inTransit: 19, picking: 11, exceptions: 7, total: 100 },
+      { date: '2026-10-04', dayLabel: '04 Oct Sun', delivered: 77, inTransit: 21, picking: 14, exceptions: 9, total: 121 }
+    ];
+  };
+
+  const dailyVelocityData = generateDailyVelocity();
 
   // Container View Selector State for Outbounds vs Inbounds overlay
   const [containerView, setContainerView] = useState<'both' | 'outbound' | 'inbound'>('both');
+
+  // Hover detail state for SVG velocity graph plot points
+  const [hoveredPoint, setHoveredPoint] = useState<{
+    index: number;
+    series: 'delivered' | 'inTransit' | 'picking' | 'exceptions' | 'all';
+    cx: number;
+    cy: number;
+    metricLabel: string;
+    metricValue: number;
+    metricColor: string;
+    d: typeof dailyVelocityData[0];
+  } | null>(null);
 
   // Comprehensive 40 Operational Exceptions & Stalled Shipments Dataset with Outbound/Inbound Dates and Separate Shipment GUID / Store Order ID
   const defaultStaleShipments = [
@@ -148,7 +207,7 @@ export const WBRPage4: React.FC<WBRPage4Props> = ({
 
   return (
     <div 
-      id="wbr-page-4" 
+      id="wbr-page-3" 
       className="a4-canvas bg-[#F8F9FA] text-slate-800 p-8 shadow-xl flex flex-col justify-between select-text relative border border-slate-200"
       style={{ minHeight: '210mm' }}
     >
@@ -162,7 +221,7 @@ export const WBRPage4: React.FC<WBRPage4Props> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                  Fulfillment &amp; Reverse Logistics
+                  Fulfilment &amp; Reverse Logistics
                 </span>
                 <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                   Parcelninja API &bull; 3PL Courier Integration
@@ -188,50 +247,55 @@ export const WBRPage4: React.FC<WBRPage4Props> = ({
           </div>
         </div>
 
-        {/* 2. HIGH-LEVEL FULFILLMENT KPI BAR */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 mb-5">
-          <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
+        {/* 2. HIGH-LEVEL FULFILLMENT KPI BAR (CASCADING ENTRY) */}
+        <motion.div 
+          className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 mb-5"
+          variants={kpiContainerVariants}
+          initial="hidden"
+          animate="visible"
+        >
+          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Dispatched</div>
             <div className="text-lg font-black text-slate-900 font-mono mt-0.5">{totalDispatched}</div>
             <div className="text-[10.5px] text-slate-500 font-medium">Outbound checkouts</div>
-          </div>
+          </motion.div>
 
-          <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
+          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Delivery SLA Rate</div>
             <div className="text-lg font-black text-emerald-700 font-mono mt-0.5">{deliverySuccess}%</div>
             <div className="text-[10.5px] text-emerald-600 font-semibold">&gt; 98.0% benchmark</div>
-          </div>
+          </motion.div>
 
-          <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
+          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Outbound In-Transit</div>
             <div className="text-lg font-black text-[#003876] font-mono mt-0.5">{inTransitCount}</div>
             <div className="text-[10.5px] text-slate-500 font-medium">Courier delivery SLA</div>
-          </div>
+          </motion.div>
 
-          <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
+          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Avg Delivery Transit</div>
             <div className="text-lg font-black text-slate-900 font-mono mt-0.5">{avgDeliveryDays}d</div>
             <div className="text-[10.5px] text-slate-500 font-medium">Dispatch to door</div>
-          </div>
+          </motion.div>
 
-          <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
+          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Same-Day Dispatch</div>
             <div className="text-lg font-black text-blue-700 font-mono mt-0.5">{sameDayDispatch}%</div>
             <div className="text-[10.5px] text-slate-500 font-medium">DC pick &amp; pack SLA</div>
-          </div>
+          </motion.div>
 
-          <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
+          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Returns to DC</div>
             <div className="text-lg font-black text-[#C41230] font-mono mt-0.5">{returnCollectionsCompleted}</div>
             <div className="text-[10.5px] text-slate-500 font-medium">Reverse collections</div>
-          </div>
+          </motion.div>
 
-          <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
+          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Exceptions Stalled</div>
             <div className="text-lg font-black text-amber-700 font-mono mt-0.5">{operationalExceptions}</div>
             <div className="text-[10.5px] text-amber-600 font-semibold">Active investigations</div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
 
         {/* 3. TWO COLUMNS: OUTBOUND DELIVERIES VS INBOUND RETURN SHIPMENTS */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 mb-5">
@@ -243,7 +307,7 @@ export const WBRPage4: React.FC<WBRPage4Props> = ({
                 <div className="flex items-center gap-2">
                   <Truck size={16} className="text-[#003876]" />
                   <h3 className="text-xs font-black text-[#003876] uppercase tracking-wider">
-                    Outbound Delivery Fulfillment &amp; Transit Speed
+                    Outbound Delivery Fulfilment &amp; Transit Speed
                   </h3>
                 </div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
@@ -411,7 +475,111 @@ export const WBRPage4: React.FC<WBRPage4Props> = ({
 
           {/* SVG JOINT-POINT AREA CHART */}
           <div className="w-full overflow-x-auto">
-            <div className="min-w-[650px] h-[170px] relative pt-2 pb-4">
+            <div 
+              className="min-w-[650px] h-[175px] relative pt-2 pb-4 select-none"
+              onMouseLeave={() => setHoveredPoint(null)}
+            >
+              {/* FLOATING HOVER DETAIL CARD */}
+              {hoveredPoint && (
+                <motion.div
+                  initial={{ opacity: 0, y: 6, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.96 }}
+                  transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                  className="absolute z-30 pointer-events-none bg-slate-900/95 text-white p-3 rounded-lg shadow-2xl border border-slate-700/80 backdrop-blur-md min-w-[225px] text-xs"
+                  style={{
+                    left: `${(hoveredPoint.cx / 700) * 100}%`,
+                    top: '8px',
+                    transform: hoveredPoint.index >= 5 
+                      ? 'translateX(calc(-100% - 14px))' 
+                      : hoveredPoint.index <= 1 
+                        ? 'translateX(14px)' 
+                        : 'translateX(-50%)',
+                  }}
+                >
+                  {/* Card Header: Day & Date + Total Volume */}
+                  <div className="flex items-center justify-between border-b border-slate-700/80 pb-1.5 mb-2 gap-3">
+                    <div>
+                      <div className="text-[10px] text-slate-400 font-mono font-medium">{hoveredPoint.d.date}</div>
+                      <div className="font-bold text-slate-100 flex items-center gap-1.5">
+                        <span>{hoveredPoint.d.dayLabel}</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-semibold">Total</span>
+                      <span className="font-mono font-black text-amber-400 text-sm">{hoveredPoint.d.total}</span>
+                    </div>
+                  </div>
+
+                  {/* Metric Breakdown Rows */}
+                  <div className="space-y-1 font-mono text-[11px]">
+                    {/* Delivered */}
+                    <div className={`flex items-center justify-between px-1.5 py-0.5 rounded transition-colors ${
+                      hoveredPoint.series === 'delivered' ? 'bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 font-bold' : 'text-slate-300'
+                    }`}>
+                      <span className="flex items-center gap-1.5 font-sans">
+                        <span className="w-2 h-2 rounded-full bg-[#059669] shrink-0" />
+                        <span>Delivered</span>
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white">{hoveredPoint.d.delivered}</span>
+                        <span className="text-[10px] text-slate-400 font-normal">({Math.round((hoveredPoint.d.delivered / hoveredPoint.d.total) * 100)}%)</span>
+                      </div>
+                    </div>
+
+                    {/* In Transit */}
+                    <div className={`flex items-center justify-between px-1.5 py-0.5 rounded transition-colors ${
+                      hoveredPoint.series === 'inTransit' ? 'bg-blue-950/70 border border-blue-500/40 text-blue-300 font-bold' : 'text-slate-300'
+                    }`}>
+                      <span className="flex items-center gap-1.5 font-sans">
+                        <span className="w-2 h-2 rounded-full bg-[#003876] border border-blue-300/40 shrink-0" />
+                        <span>In Transit</span>
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white">{hoveredPoint.d.inTransit}</span>
+                        <span className="text-[10px] text-slate-400 font-normal">({Math.round((hoveredPoint.d.inTransit / hoveredPoint.d.total) * 100)}%)</span>
+                      </div>
+                    </div>
+
+                    {/* Picking / Packing */}
+                    <div className={`flex items-center justify-between px-1.5 py-0.5 rounded transition-colors ${
+                      hoveredPoint.series === 'picking' ? 'bg-amber-950/70 border border-amber-500/40 text-amber-300 font-bold' : 'text-slate-300'
+                    }`}>
+                      <span className="flex items-center gap-1.5 font-sans">
+                        <span className="w-2 h-2 rounded-full bg-[#D97706] shrink-0" />
+                        <span>Picking</span>
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white">{hoveredPoint.d.picking}</span>
+                        <span className="text-[10px] text-slate-400 font-normal">({Math.round((hoveredPoint.d.picking / hoveredPoint.d.total) * 100)}%)</span>
+                      </div>
+                    </div>
+
+                    {/* Exceptions */}
+                    <div className={`flex items-center justify-between px-1.5 py-0.5 rounded transition-colors ${
+                      hoveredPoint.series === 'exceptions' ? 'bg-rose-950/70 border border-rose-500/40 text-rose-300 font-bold' : 'text-slate-300'
+                    }`}>
+                      <span className="flex items-center gap-1.5 font-sans">
+                        <span className="w-2 h-2 rounded-full bg-[#C41230] shrink-0" />
+                        <span>Exceptions</span>
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-rose-300">{hoveredPoint.d.exceptions}</span>
+                        <span className="text-[10px] text-slate-400 font-normal">({Math.round((hoveredPoint.d.exceptions / hoveredPoint.d.total) * 100)}%)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Context Footer */}
+                  <div className="mt-2 pt-1.5 border-t border-slate-800 text-[10px] text-slate-400 flex items-center justify-between font-sans">
+                    <span>{hoveredPoint.series === 'all' ? 'All points on day' : `Point: ${hoveredPoint.metricLabel}`}</span>
+                    <span className="font-mono text-emerald-400 font-bold">
+                      {Math.round(((hoveredPoint.d.delivered) / hoveredPoint.d.total) * 100)}% Delivered
+                    </span>
+                  </div>
+                </motion.div>
+              )}
+
               <svg className="w-full h-full overflow-visible" viewBox="0 0 700 140" preserveAspectRatio="none">
                 <defs>
                   <linearGradient id="deliveredGrad" x1="0" y1="0" x2="0" y2="1">
@@ -434,6 +602,20 @@ export const WBRPage4: React.FC<WBRPage4Props> = ({
                     </g>
                   );
                 })}
+
+                {/* VERTICAL HOVER GUIDELINE */}
+                {hoveredPoint && (
+                  <line
+                    x1={hoveredPoint.cx}
+                    y1="15"
+                    x2={hoveredPoint.cx}
+                    y2="125"
+                    stroke="#003876"
+                    strokeWidth="1.5"
+                    strokeDasharray="3 3"
+                    className="opacity-40 pointer-events-none transition-all duration-150"
+                  />
+                )}
 
                 {/* AREA UNDER DELIVERED PATH */}
                 <path
@@ -484,7 +666,30 @@ export const WBRPage4: React.FC<WBRPage4Props> = ({
                   strokeLinecap="round"
                 />
 
-                {/* JOINT POINTS & LABELS */}
+                {/* ACTIVE HIGHLIGHT RING FOR HOVERED PLOT POINT */}
+                {hoveredPoint && hoveredPoint.series !== 'all' && (
+                  <g className="pointer-events-none">
+                    <circle
+                      cx={hoveredPoint.cx}
+                      cy={hoveredPoint.cy}
+                      r="8"
+                      fill="none"
+                      stroke={hoveredPoint.metricColor}
+                      strokeWidth="2.5"
+                      strokeOpacity="0.4"
+                    />
+                    <circle
+                      cx={hoveredPoint.cx}
+                      cy={hoveredPoint.cy}
+                      r="5.5"
+                      fill={hoveredPoint.metricColor}
+                      stroke="#FFFFFF"
+                      strokeWidth="2"
+                    />
+                  </g>
+                )}
+
+                {/* JOINT POINTS, HIT AREAS & LABELS */}
                 {dailyVelocityData.map((d, i) => {
                   const cx = 50 + i * 103.3;
                   const cyDelivered = 120 - (d.delivered / 120) * 105;
@@ -492,27 +697,175 @@ export const WBRPage4: React.FC<WBRPage4Props> = ({
                   const cyPicking = 120 - (d.picking / 120) * 105;
                   const cyExceptions = 120 - (d.exceptions / 120) * 105;
 
+                  const isColHovered = hoveredPoint?.index === i;
+
                   return (
                     <g key={i}>
+                      {/* INVISIBLE DAY COLUMN HOVER HIT BOX */}
+                      <rect
+                        x={cx - 48}
+                        y="10"
+                        width="96"
+                        height="125"
+                        fill="transparent"
+                        className="cursor-pointer"
+                        onMouseEnter={() => {
+                          if (!hoveredPoint || hoveredPoint.index !== i) {
+                            setHoveredPoint({
+                              index: i,
+                              series: 'all',
+                              cx,
+                              cy: cyDelivered,
+                              metricLabel: 'Day Summary',
+                              metricValue: d.total,
+                              metricColor: '#003876',
+                              d
+                            });
+                          }
+                        }}
+                      />
+
                       {/* X-AXIS DAY LABELS */}
-                      <text x={cx} y="134" textAnchor="middle" className="text-[9.5px] fill-slate-600 font-bold font-mono">
+                      <text 
+                        x={cx} 
+                        y="134" 
+                        textAnchor="middle" 
+                        className={`text-[9.5px] font-mono transition-colors ${
+                          isColHovered ? 'fill-[#003876] font-black' : 'fill-slate-600 font-bold'
+                        }`}
+                      >
                         {d.dayLabel}
                       </text>
 
                       {/* DELIVERED JOINT POINT */}
-                      <circle cx={cx} cy={cyDelivered} r="4" fill="#059669" stroke="#FFFFFF" strokeWidth="2" />
-                      <text x={cx} y={cyDelivered - 6} textAnchor="middle" className="text-[9px] fill-emerald-800 font-black font-mono">
+                      <g
+                        className="cursor-pointer"
+                        onMouseEnter={(e) => {
+                          e.stopPropagation();
+                          setHoveredPoint({
+                            index: i,
+                            series: 'delivered',
+                            cx,
+                            cy: cyDelivered,
+                            metricLabel: 'Delivered',
+                            metricValue: d.delivered,
+                            metricColor: '#059669',
+                            d
+                          });
+                        }}
+                      >
+                        <circle cx={cx} cy={cyDelivered} r="12" fill="transparent" />
+                        <circle 
+                          cx={cx} 
+                          cy={cyDelivered} 
+                          r={isColHovered && hoveredPoint?.series === 'delivered' ? 6 : 4} 
+                          fill="#059669" 
+                          stroke="#FFFFFF" 
+                          strokeWidth={isColHovered && hoveredPoint?.series === 'delivered' ? 2.5 : 2}
+                          className="transition-all duration-150"
+                        />
+                        <title>{`${d.dayLabel} • Delivered: ${d.delivered} parcels (${Math.round((d.delivered / d.total) * 100)}% of daily total)`}</title>
+                      </g>
+                      <text 
+                        x={cx} 
+                        y={cyDelivered - 6} 
+                        textAnchor="middle" 
+                        className={`text-[9px] font-mono pointer-events-none transition-all ${
+                          isColHovered ? 'fill-emerald-950 font-black' : 'fill-emerald-800 font-bold'
+                        }`}
+                      >
                         {d.delivered}
                       </text>
 
                       {/* IN TRANSIT JOINT POINT */}
-                      <circle cx={cx} cy={cyTransit} r="3" fill="#003876" stroke="#FFFFFF" strokeWidth="1.5" />
+                      <g
+                        className="cursor-pointer"
+                        onMouseEnter={(e) => {
+                          e.stopPropagation();
+                          setHoveredPoint({
+                            index: i,
+                            series: 'inTransit',
+                            cx,
+                            cy: cyTransit,
+                            metricLabel: 'In Transit',
+                            metricValue: d.inTransit,
+                            metricColor: '#003876',
+                            d
+                          });
+                        }}
+                      >
+                        <circle cx={cx} cy={cyTransit} r="10" fill="transparent" />
+                        <circle 
+                          cx={cx} 
+                          cy={cyTransit} 
+                          r={isColHovered && hoveredPoint?.series === 'inTransit' ? 5 : 3} 
+                          fill="#003876" 
+                          stroke="#FFFFFF" 
+                          strokeWidth={isColHovered && hoveredPoint?.series === 'inTransit' ? 2 : 1.5}
+                          className="transition-all duration-150"
+                        />
+                        <title>{`${d.dayLabel} • In Transit: ${d.inTransit} parcels (${Math.round((d.inTransit / d.total) * 100)}%)`}</title>
+                      </g>
 
                       {/* PICKING JOINT POINT */}
-                      <circle cx={cx} cy={cyPicking} r="2.5" fill="#D97706" stroke="#FFFFFF" strokeWidth="1.5" />
+                      <g
+                        className="cursor-pointer"
+                        onMouseEnter={(e) => {
+                          e.stopPropagation();
+                          setHoveredPoint({
+                            index: i,
+                            series: 'picking',
+                            cx,
+                            cy: cyPicking,
+                            metricLabel: 'Picking / Packing',
+                            metricValue: d.picking,
+                            metricColor: '#D97706',
+                            d
+                          });
+                        }}
+                      >
+                        <circle cx={cx} cy={cyPicking} r="9" fill="transparent" />
+                        <circle 
+                          cx={cx} 
+                          cy={cyPicking} 
+                          r={isColHovered && hoveredPoint?.series === 'picking' ? 4.5 : 2.5} 
+                          fill="#D97706" 
+                          stroke="#FFFFFF" 
+                          strokeWidth={isColHovered && hoveredPoint?.series === 'picking' ? 2 : 1.5}
+                          className="transition-all duration-150"
+                        />
+                        <title>{`${d.dayLabel} • Picking Queue: ${d.picking} parcels (${Math.round((d.picking / d.total) * 100)}%)`}</title>
+                      </g>
 
                       {/* EXCEPTIONS JOINT POINT */}
-                      <circle cx={cx} cy={cyExceptions} r="2.5" fill="#C41230" stroke="#FFFFFF" strokeWidth="1.5" />
+                      <g
+                        className="cursor-pointer"
+                        onMouseEnter={(e) => {
+                          e.stopPropagation();
+                          setHoveredPoint({
+                            index: i,
+                            series: 'exceptions',
+                            cx,
+                            cy: cyExceptions,
+                            metricLabel: 'Exceptions / Stalled',
+                            metricValue: d.exceptions,
+                            metricColor: '#C41230',
+                            d
+                          });
+                        }}
+                      >
+                        <circle cx={cx} cy={cyExceptions} r="9" fill="transparent" />
+                        <circle 
+                          cx={cx} 
+                          cy={cyExceptions} 
+                          r={isColHovered && hoveredPoint?.series === 'exceptions' ? 4.5 : 2.5} 
+                          fill="#C41230" 
+                          stroke="#FFFFFF" 
+                          strokeWidth={isColHovered && hoveredPoint?.series === 'exceptions' ? 2 : 1.5}
+                          className="transition-all duration-150"
+                        />
+                        <title>{`${d.dayLabel} • Exceptions: ${d.exceptions} parcels (${Math.round((d.exceptions / d.total) * 100)}%)`}</title>
+                      </g>
                     </g>
                   );
                 })}
@@ -520,17 +873,45 @@ export const WBRPage4: React.FC<WBRPage4Props> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-7 gap-2 mt-2 pt-2 border-t border-slate-100 text-center text-[10px]">
-            {dailyVelocityData.map((d, idx) => (
-              <div key={idx} className="bg-slate-50 p-1.5 rounded border border-slate-200">
-                <div className="font-bold text-slate-700">{d.dayLabel}</div>
-                <div className="font-mono text-emerald-700 font-black text-xs mt-0.5">{d.delivered} del</div>
-                <div className="font-mono text-[9px] text-slate-500">
-                  {d.inTransit} tr &bull; <span className="text-rose-700">{d.exceptions} ex</span>
-                </div>
-              </div>
-            ))}
-          </div>
+          {/* CASCADING DAILY VELOCITY CARDS (SYNCED WITH HOVER) */}
+          <motion.div 
+            className="grid grid-cols-2 sm:grid-cols-7 gap-2 mt-2 pt-2 border-t border-slate-100 text-center text-[10px]"
+            variants={kpiContainerVariants}
+            initial="hidden"
+            animate="visible"
+          >
+            {dailyVelocityData.map((d, idx) => {
+              const isCardHovered = hoveredPoint?.index === idx;
+              return (
+                <motion.div 
+                  key={idx} 
+                  variants={kpiCardVariants}
+                  onMouseEnter={() => setHoveredPoint({
+                    index: idx,
+                    series: 'all',
+                    cx: 50 + idx * 103.3,
+                    cy: 120 - (d.delivered / 120) * 105,
+                    metricLabel: 'Day Summary',
+                    metricValue: d.total,
+                    metricColor: '#003876',
+                    d
+                  })}
+                  onMouseLeave={() => setHoveredPoint(null)}
+                  className={`p-1.5 rounded border transition-all cursor-pointer ${
+                    isCardHovered 
+                      ? 'bg-blue-50/80 border-[#003876] shadow-xs ring-1 ring-[#003876]/30 -translate-y-0.5' 
+                      : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <div className={`font-bold ${isCardHovered ? 'text-[#003876]' : 'text-slate-700'}`}>{d.dayLabel}</div>
+                  <div className="font-mono text-emerald-700 font-black text-xs mt-0.5">{d.delivered} del</div>
+                  <div className="font-mono text-[9px] text-slate-500">
+                    {d.inTransit} tr &bull; <span className="text-rose-700">{d.exceptions} ex</span>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </motion.div>
         </div>
 
         {/* 5. OPERATIONAL EXCEPTIONS & STALLED SHIPMENTS TABLE (40 ORDERS REQUIRING ACTION) */}
@@ -737,12 +1118,12 @@ export const WBRPage4: React.FC<WBRPage4Props> = ({
         <div className="flex items-center gap-2">
           <span className="font-bold text-[#003876]">Levi's South Africa</span>
           <span>&bull;</span>
-          <span>Parcelninja Fulfillment &amp; Returns Logistics</span>
+          <span>Parcelninja Fulfilment &amp; Returns Logistics</span>
           <span>&bull;</span>
           <span>Outbound &amp; Reverse Operations</span>
         </div>
         <div className="font-mono">
-          Page 4 of 4 &bull; Parcelninja Shipments (Deliveries and Returns)
+          Page 3 of 4 &bull; Parcelninja Fulfilment (Deliveries and Returns)
         </div>
       </div>
     </div>

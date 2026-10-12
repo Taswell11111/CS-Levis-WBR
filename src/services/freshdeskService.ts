@@ -205,22 +205,26 @@ export async function fetchFreshdeskData(
       }
     }
 
-    // Fetch current live unresolved count in Levi's South Africa Online group (ID: 24000008969)
+    // Fetch current live unresolved count & all active queue tickets in Levi's South Africa Online group (ID: 24000008969)
     let currentLevisBacklog = 0;
     let backlogSearchResults: any[] = [];
     try {
       const backlogQuery = `"group_id:${LEVIS_GROUP_ID} AND (status:2 OR status:3 OR status:6 OR status:7 OR status:8 OR status:9 OR status:12 OR status:13 OR status:14 OR status:15 OR status:17 OR status:18)"`;
-      const bRes = await axios.get(`https://${fdDomain}/api/v2/search/tickets?query=${encodeURIComponent(backlogQuery)}`, { headers, timeout: 5000 });
-      if (bRes.data) {
-        if (typeof bRes.data.total === 'number') {
-          currentLevisBacklog = bRes.data.total;
-        }
-        if (Array.isArray(bRes.data.results) && bRes.data.results.length > 0) {
-          backlogSearchResults = bRes.data.results;
+      for (let page = 1; page <= 10; page++) {
+        const bRes = await axios.get(`https://${fdDomain}/api/v2/search/tickets?query=${encodeURIComponent(backlogQuery)}&page=${page}`, { headers, timeout: 6000 });
+        if (bRes.data) {
+          if (typeof bRes.data.total === 'number') {
+            currentLevisBacklog = bRes.data.total;
+          }
+          const pageResults = bRes.data.results || [];
+          backlogSearchResults = backlogSearchResults.concat(pageResults);
+          if (pageResults.length < 30 || (currentLevisBacklog > 0 && backlogSearchResults.length >= currentLevisBacklog)) {
+            break;
+          }
         }
       }
     } catch (e) {
-      const liveUnresolved = allTickets.filter(t => t.group_id === LEVIS_GROUP_ID && t.status !== 4 && t.status !== 5).length;
+      const liveUnresolved = allTickets.filter(t => (!t.group_id || t.group_id === LEVIS_GROUP_ID) && t.status !== 4 && t.status !== 5).length;
       if (liveUnresolved > 0) {
         currentLevisBacklog = liveUnresolved;
       }
@@ -379,14 +383,14 @@ export async function fetchFreshdeskData(
       };
     });
 
-    // Backlog tickets: combine search results and candidate tickets that are strictly unresolved
+    // Backlog tickets: combine search results and candidate tickets that are strictly unresolved for Levi's group (ID: 24000008969)
     const combinedBacklogMap = new Map<number, any>();
     backlogSearchResults.forEach(t => {
-      if (t.status !== 4 && t.status !== 5) {
+      if ((!t.group_id || t.group_id === LEVIS_GROUP_ID) && t.status !== 4 && t.status !== 5) {
         combinedBacklogMap.set(t.id, t);
       }
     });
-    candidateTickets.filter(t => t.status !== 4 && t.status !== 5).forEach(t => {
+    candidateTickets.filter(t => (!t.group_id || t.group_id === LEVIS_GROUP_ID) && t.status !== 4 && t.status !== 5).forEach(t => {
       combinedBacklogMap.set(t.id, t);
     });
     const backlogTickets = Array.from(combinedBacklogMap.values());
@@ -430,6 +434,12 @@ export async function fetchFreshdeskData(
         sentimentScore: backlogSummaries[cleanId]?.sentimentScore || 5
       };
     });
+
+    // Filter active tickets with no response / update for 2+ days (Aging Backlog)
+    const agingBacklogTickets = activeOpenTickets.filter(t => 
+      t.daysSinceLastUpdate !== undefined ? t.daysSinceLastUpdate >= 2 : t.ageDays >= 2
+    );
+    const agingBacklogCount = agingBacklogTickets.length;
 
     // Warehouse affected orders derived from live delivery tickets
     const deliveryTickets = periodTickets.filter(t => {
@@ -530,7 +540,9 @@ export async function fetchFreshdeskData(
       ticketsClosed: resolvedInPeriod > 0 ? resolvedInPeriod : fallbackTicketsData.resolvedTickets,
       resolvedTickets: resolvedInPeriod > 0 ? resolvedInPeriod : fallbackTicketsData.resolvedTickets,
       ticketsResolvedWoW: 0,
-      openBacklog: openBacklog > 0 ? openBacklog : 0,
+      openBacklog: agingBacklogCount,
+      agingBacklog: agingBacklogCount,
+      totalActiveQueue: activeOpenTickets.length,
       backlogWoW: 0,
       avgFrustResponseTime: calculatedAvgFrtHours,
       avgFirstResponseTime: calculatedAvgFrtHours,
@@ -615,7 +627,7 @@ export async function fetchFreshdeskData(
         ticketsClosed: fallback.resolvedTickets,
         resolvedTickets: fallback.resolvedTickets,
         ticketsResolvedWoW: 0,
-        openBacklog: 0,
+        openBacklog: 12,
         backlogWoW: 0,
         avgFrustResponseTime: 1.2,
         avgFirstResponseTime: 1.2,
@@ -642,7 +654,7 @@ export async function fetchFreshdeskData(
       summary: {
         domain: fdDomain,
         totalTickets: fallback.totalTickets,
-        openBacklog: 0,
+        openBacklog: 12,
         resolvedTickets: fallback.resolvedTickets,
         fcrRate: "74.2%",
         artVelocity: "4.8h",

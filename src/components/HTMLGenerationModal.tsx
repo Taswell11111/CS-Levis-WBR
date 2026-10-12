@@ -13,9 +13,12 @@ import {
   UploadCloud, 
   Key, 
   FileCheck,
-  FolderOpen
+  FolderOpen,
+  Trash2,
+  RefreshCw
 } from 'lucide-react';
 import { WBRData } from '../types';
+import { copyToClipboard } from '../utils/clipboardUtils';
 import { 
   generateStandaloneInteractiveHTML, 
   downloadInteractiveHTML, 
@@ -57,9 +60,38 @@ export const HTMLGenerationModal: React.FC<HTMLGenerationModalProps> = ({
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>({ state: 'idle' });
   const [showCustomToken, setShowCustomToken] = useState(false);
   const [customToken, setCustomToken] = useState('');
+  const [cleaningStorage, setCleaningStorage] = useState(false);
+  const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
   const [bucketStatus, setBucketStatus] = useState<{ checked: boolean; accessible?: boolean; error?: string } | null>(null);
 
   const filename = `Levis_WBR_${startDate}_to_${endDate}.html`;
+
+  const handleCleanStorage = async (targetScope: 'inactive' | 'both' = 'inactive') => {
+    setCleaningStorage(true);
+    setCleanupMessage(null);
+    try {
+      const res = await fetch('/api/gcs/clear-stale-files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target: targetScope,
+          preserveLatestInLive: true,
+          olderThanDays: 0,
+          customToken: customToken.trim() || undefined
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCleanupMessage(data.message || 'Stale files successfully cleared! Folders preserved with .keep markers.');
+      } else {
+        setCleanupMessage(data.error || 'Could not clear stale files.');
+      }
+    } catch (e: any) {
+      setCleanupMessage(e.message || 'Network error executing storage cleanup.');
+    } finally {
+      setCleaningStorage(false);
+    }
+  };
 
   // Check bucket connection status upon modal open
   useEffect(() => {
@@ -179,9 +211,11 @@ export const HTMLGenerationModal: React.FC<HTMLGenerationModalProps> = ({
   const handleCopy = async () => {
     try {
       const html = generateStandaloneInteractiveHTML({ data, startDate, endDate, zoomLevel });
-      await navigator.clipboard.writeText(html);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
+      const success = await copyToClipboard(html);
+      if (success) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2500);
+      }
     } catch (e) {
       console.error('Failed to copy HTML to clipboard:', e);
     }
@@ -335,6 +369,51 @@ export const HTMLGenerationModal: React.FC<HTMLGenerationModalProps> = ({
               {copied ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
               <span>{copied ? "Copied!" : "Copy HTML"}</span>
             </button>
+          </div>
+
+          {/* STORAGE PURGE & FOLDER PRESERVATION ACTION */}
+          <div className="pt-2 border-t border-gray-100 flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10.5px] font-semibold text-gray-500 flex items-center gap-1">
+                <FolderOpen size={12} className="text-blue-700" />
+                <span>GCS Storage Maintenance:</span>
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleCleanStorage('inactive')}
+                  disabled={cleaningStorage}
+                  className="bg-rose-50 hover:bg-rose-100 text-rose-800 text-[10.5px] font-bold px-2.5 py-1 rounded border border-rose-200 flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Purge stale archived snapshots from Inactive while preserving folder structure with .keep markers"
+                >
+                  <Trash2 size={11} className={cleaningStorage ? "animate-spin" : "text-rose-700"} />
+                  <span>{cleaningStorage ? "Cleaning..." : "Purge Inactive Folder"}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCleanStorage('both')}
+                  disabled={cleaningStorage}
+                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-[10.5px] font-bold px-2 py-1 rounded border border-gray-300 flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Purge all older files in both Live and Inactive while keeping folder structure and current live report"
+                >
+                  <RefreshCw size={10} className={cleaningStorage ? "animate-spin" : ""} />
+                  <span>Clean All Stale</span>
+                </button>
+              </div>
+            </div>
+
+            {cleanupMessage && (
+              <div className="p-2 rounded bg-slate-50 border border-slate-200 text-[10px] text-slate-700 font-mono leading-tight flex items-start justify-between gap-1">
+                <span>{cleanupMessage}</span>
+                <button 
+                  type="button" 
+                  onClick={() => setCleanupMessage(null)}
+                  className="text-slate-400 hover:text-slate-700 cursor-pointer font-sans text-xs px-1"
+                >
+                  &times;
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

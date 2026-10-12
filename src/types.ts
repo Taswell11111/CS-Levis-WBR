@@ -39,6 +39,8 @@ export interface ShopifyRevenueAOV {
   aov: number | null;
   aovWoW: number | null;
   revenueWoW: number | null;
+  grossSalesWoW?: number | null;
+  netSalesWoW?: number | null;
 }
 
 export interface ShopifyCustomerInsights {
@@ -104,6 +106,7 @@ export interface ShopifyData {
   cancellationWoW?: number | null;
   itemsInPaidOrders?: number | null;
   netItemsSold?: number | null;
+  netItemsSoldWoW?: number | null;
   returnReversalGap?: number | null;
   unfulfilledOrders?: number | null;
   cancelledOrders?: number | null;
@@ -177,7 +180,10 @@ export interface FreshdeskData {
   };
   firstContactResolutionRate?: number | null;
   fcrRate?: number | null;
+  fcrRateFormatted?: string | null;
+  fcrWoW?: number | null;
   csatScore?: number | null;
+  csatWoW?: number | null;
 }
 
 export interface ActionBreakdownItem {
@@ -232,6 +238,7 @@ export interface ReturnReasonDetailed {
 
 export interface ReturnGoData {
   totalReturns: number | null;
+  totalReturnValue?: number | null;
   returnsRequested?: number | null;
   returnsWoW: number | null;
   pendingRMAs?: number | null;
@@ -290,6 +297,7 @@ export interface StatusAgingDay {
 }
 
 export interface ParcelNinjaData {
+  dailyDeliveryData?: any[];
   delivered?: number | null;
   deliverySuccess: number | null;
   inTransit: number | null;
@@ -648,11 +656,12 @@ export interface WeeklyReportItem {
   periodLabel: string; // "14 Sep – 20 Sep 2026"
   startDate: string; // "2026-09-14"
   endDate: string; // "2026-09-20"
-  comparisonStartDate: string; // "2026-09-07"
-  comparisonEndDate: string; // "2026-09-13"
+  comparisonStartDate?: string;
+  comparisonEndDate?: string;
   status: 'ACTIVE_CHECKPOINT' | 'PUBLISHED' | 'ARCHIVED';
-  publishedAt: string;
+  publishedAt?: string;
   signOffBy?: string;
+  signOffDate?: string;
   summaryNote: string;
   metrics: {
     paidOrders: number;

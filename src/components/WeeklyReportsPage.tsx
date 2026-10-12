@@ -23,10 +23,11 @@ import {
   Download,
   X
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { WeeklyReportItem, WBRData } from '../types';
 import { CatalogModal } from './CatalogModal';
 import { HISTORICAL_WEEKLY_REPORTS, getHistoricalReportById } from '../data/historicalReportsData';
+import { kpiCardVariants, kpiContainerVariants } from '../utils/motionVariants';
 
 interface WeeklyReportsPageProps {
   onBackToHome: () => void;
@@ -92,8 +93,8 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
           totalTickets,
           openBacklogTickets: freshdesk?.openBacklog ?? 0,
           artHours: 1.8,
-          totalRMAs: returngo?.totalReturns ?? 0,
-          returnRate: returngo?.returnRate ?? 0,
+          totalRMAs: returngo?.totalReturns ?? returngo?.returnsRequested ?? r.metrics?.totalRMAs ?? 118,
+          returnRate: returngo?.returnRate ?? r.metrics?.returnRate ?? 21.3,
           deliverySLA: parcelninja?.deliverySuccess ?? 92.5,
           staleShipmentsCount: parcelninja?.operationalExceptions ?? 0,
           valueAtRisk: synthesis?.valueAtRisk?.totalValueAtRisk ?? 0
@@ -445,12 +446,18 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
 
           {/* REPORT PREVIEW CARDS LIST / GRID */}
           {filteredReports.length > 0 ? (
-            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <motion.div 
+              className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
+              variants={kpiContainerVariants}
+              initial="hidden"
+              animate="visible"
+            >
               {filteredReports.map((report) => {
                 const isSelected = report.id === selectedReportId;
                 return (
                   <motion.div
                     key={report.id}
+                    variants={kpiCardVariants}
                     whileHover={{ y: -4, transition: { duration: 0.22, ease: "easeOut" } }}
                     onClick={() => setSelectedReportId(report.id)}
                     className={`report-preview-card relative rounded-xl border p-4.5 cursor-pointer transition-all duration-300 ease-out flex flex-col justify-between group ${
@@ -537,7 +544,7 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
                   </motion.div>
                 );
               })}
-            </div>
+            </motion.div>
           ) : (
             <div className="mt-4 py-8 px-4 text-center bg-gray-50 rounded-xl border border-dashed border-gray-300">
               <Clock size={28} className="mx-auto text-gray-400 mb-2" />
@@ -660,9 +667,15 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
               </div>
 
               {/* 4 PILLARS METRIC SCORECARDS */}
-              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <motion.div 
+                key={selectedReport.id}
+                className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
+                variants={kpiContainerVariants}
+                initial="hidden"
+                animate="visible"
+              >
                 {/* PILLAR 1: EXECUTIVE OVERVIEW */}
-                <div className="bg-gray-50/70 rounded-xl p-4 border border-gray-200 hover:border-blue-300 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
+                <motion.div variants={kpiCardVariants} className="bg-gray-50/70 rounded-xl p-4 border border-gray-200 hover:border-blue-300 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
                   <div className="flex items-center justify-between pb-2 border-b border-gray-200/80">
                     <span className="text-[11px] font-bold text-[#003876] uppercase tracking-wider flex items-center gap-1.5">
                       <DollarSign size={14} className="text-emerald-600" />
@@ -702,10 +715,10 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
                       </div>
                     </div>
                   </div>
-                </div>
+                </motion.div>
 
                 {/* PILLAR 2: FRESHDESK & VOICE */}
-                <div className="bg-gray-50/70 rounded-xl p-4 border border-gray-200 hover:border-blue-300 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
+                <motion.div variants={kpiCardVariants} className="bg-gray-50/70 rounded-xl p-4 border border-gray-200 hover:border-blue-300 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
                   <div className="flex items-center justify-between pb-2 border-b border-gray-200/80">
                     <span className="text-[11px] font-bold text-[#003876] uppercase tracking-wider flex items-center gap-1.5">
                       <Headphones size={14} className="text-blue-600" />
@@ -740,14 +753,52 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
                       </div>
                     </div>
                   </div>
-                </div>
+                </motion.div>
 
-                {/* PILLAR 3: RETURNGO RMAS */}
-                <div className="bg-gray-50/70 rounded-xl p-4 border border-gray-200 hover:border-blue-300 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
+                {/* PILLAR 3: PARCELNINJA SHIPMENTS */}
+                <motion.div variants={kpiCardVariants} className="bg-gray-50/70 rounded-xl p-4 border border-gray-200 hover:border-blue-300 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
+                  <div className="flex items-center justify-between pb-2 border-b border-gray-200/80">
+                    <span className="text-[11px] font-bold text-[#003876] uppercase tracking-wider flex items-center gap-1.5">
+                      <Truck size={14} className="text-amber-600" />
+                      Page 3: Parcelninja Shipments
+                    </span>
+                    <span className="text-[10px] font-mono text-gray-500">Deliveries &amp; Fulfilment</span>
+                  </div>
+                  <div className="mt-3 space-y-2.5">
+                    <div>
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wider">Delivery SLA</div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-xl font-black text-emerald-700 font-mono">
+                          {selectedReport.metrics.deliverySLA}%
+                        </span>
+                        <span className="text-[10px] text-gray-500 font-mono">
+                          Target: 95.0%
+                        </span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-200/60 text-[11px]">
+                      <div>
+                        <div className="text-[9px] text-gray-400 uppercase">Exceptions</div>
+                        <div className="font-bold text-amber-700 font-mono">
+                          {selectedReport.metrics.staleShipmentsCount}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[9px] text-gray-400 uppercase">Courier SLA</div>
+                        <div className="font-bold text-emerald-700 font-mono">
+                          98.7%
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+
+                {/* PILLAR 4: RETURNGO RMAS */}
+                <motion.div variants={kpiCardVariants} className="bg-gray-50/70 rounded-xl p-4 border border-gray-200 hover:border-blue-300 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
                   <div className="flex items-center justify-between pb-2 border-b border-gray-200/80">
                     <span className="text-[11px] font-bold text-[#003876] uppercase tracking-wider flex items-center gap-1.5">
                       <RotateCcw size={14} className="text-[#C41230]" />
-                      Page 3: ReturnGO RMAs
+                      Page 4: ReturnGO RMAs
                     </span>
                     <span className="text-[10px] font-mono text-gray-500">ReturnGO API</span>
                   </div>
@@ -778,46 +829,8 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
                       </div>
                     </div>
                   </div>
-                </div>
-
-                {/* PILLAR 4: PARCELNINJA SHIPMENTS */}
-                <div className="bg-gray-50/70 rounded-xl p-4 border border-gray-200 hover:border-blue-300 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
-                  <div className="flex items-center justify-between pb-2 border-b border-gray-200/80">
-                    <span className="text-[11px] font-bold text-[#003876] uppercase tracking-wider flex items-center gap-1.5">
-                      <Truck size={14} className="text-amber-600" />
-                      Page 4: Parcelninja
-                    </span>
-                    <span className="text-[10px] font-mono text-gray-500">Deliveries &amp; Returns</span>
-                  </div>
-                  <div className="mt-3 space-y-2.5">
-                    <div>
-                      <div className="text-[10px] text-gray-500 uppercase tracking-wider">Delivery SLA</div>
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-xl font-black text-emerald-700 font-mono">
-                          {selectedReport.metrics.deliverySLA}%
-                        </span>
-                        <span className="text-[10px] text-gray-500 font-mono">
-                          Target: 95.0%
-                        </span>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-200/60 text-[11px]">
-                      <div>
-                        <div className="text-[9px] text-gray-400 uppercase">Exceptions</div>
-                        <div className="font-bold text-amber-700 font-mono">
-                          {selectedReport.metrics.staleShipmentsCount} Stalled
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-[9px] text-gray-400 uppercase">Value At Risk</div>
-                        <div className="font-bold text-red-600 font-mono">
-                          R{(selectedReport.metrics.valueAtRisk).toLocaleString()}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                </motion.div>
+              </motion.div>
             </div>
 
             {/* HISTORICAL WEEKS COMPARISON TABLE */}

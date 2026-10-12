@@ -9,6 +9,9 @@
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
+    "clean:gcs": "tsx scripts/cleanGcsFolders.ts",
+    "clean:gcs:inactive": "tsx scripts/cleanGcsFolders.ts --target=inactive",
+    "clean:gcs:dry-run": "tsx scripts/cleanGcsFolders.ts --target=both --dry-run",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

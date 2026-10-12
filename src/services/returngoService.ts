@@ -689,15 +689,14 @@ export async function fetchReturnGoData(
       };
     });
 
-    // Map active open RMAs for Page 2
-    const activeOpenRMAs = normalizedRMAs.filter((r: any) => {
-      const st = (r.status || "").toLowerCase();
-      return st === "pending" || st === "approved" || st === "received" || st.includes("transit");
-    }).map((r: any) => {
-      const createdTime = new Date(r.createdAt).getTime();
+    // Map active open RMAs: include all unresolved RMAs across all time that are NOT done
+    const formatOpenRma = (r: any) => {
+      const createdTime = getRmaCreatedTime(r);
+      const d = createdTime ? new Date(createdTime) : new Date();
       const ageDays = createdTime ? Number(((Date.now() - createdTime) / (1000 * 60 * 60 * 24)).toFixed(1)) : 0;
-      let stage = "Pending Customer Action / Drop-off";
       const st = (r.status || "").toLowerCase();
+
+      let stage = "Pending Customer Action / Drop-off";
       if (st === "pending") stage = "Pending CS Operational Review";
       else if (st === "approved") stage = "Approved & Waybill Generated";
       else if (st.includes("transit")) stage = `In Transit with Courier (${r.carrierName || 'Courier'})`;
@@ -709,20 +708,36 @@ export async function fetchReturnGoData(
       else if (st.includes("transit")) actionRequired = `Parcel in transit to DC; tracking: ${r.trackingNumber || 'Active'}.`;
       else if (st === "received") actionRequired = "Delivered to Epping DC; QA inspection required to trigger automatic voucher release.";
 
+      const rmaNum = r.rmaNumber || `RMA-${r.rmaId || r.id}`;
+      const ordName = r.orderName || (r.order_name ? (r.order_name.startsWith('#') ? r.order_name : `#${r.order_name}`) : '#LSSA-Order');
+
       return {
-        rmaNumber: r.rmaNumber,
-        createdDate: r.createdDate,
-        orderRef: r.orderName,
-        customerName: r.customerName,
-        returnReason: r.reason,
-        subReason: r.subReason,
-        resolutionRequested: r.resolution,
+        rmaNumber: rmaNum,
+        createdDate: d.toISOString().replace("T", " ").slice(5, 16),
+        orderRef: ordName,
+        customerName: r.customerName || "Customer",
+        returnReason: r.reason || r.returnReason || "Does not fit",
+        subReason: r.subReason || "General / Sizing",
+        resolutionRequested: r.resolution || "Refund to payment method",
         currentStage: stage,
         status: (st === 'pending' ? 'Pending' : st === 'approved' ? 'Approved' : st.includes('transit') ? 'In Transit' : 'Received') as any,
         ageDays,
         actionRequired
       };
-    });
+    };
+
+    const isOpenStatus = (statusStr: string) => {
+      const st = (statusStr || "").toLowerCase();
+      return st === "pending" || st === "approved" || st === "received" || st.includes("transit");
+    };
+
+    const allOpenRecords = (allRMAs && allRMAs.length > 0)
+      ? allRMAs.filter((r: any) => isOpenStatus(r.status)).map(formatOpenRma)
+      : [];
+
+    const activeOpenRMAs = allOpenRecords.length >= normalizedRMAs.filter((r: any) => isOpenStatus(r.status)).length
+      ? allOpenRecords
+      : normalizedRMAs.filter((r: any) => isOpenStatus(r.status)).map(formatOpenRma);
 
     // Extract any text WoW parameters if provided in raw text, otherwise use realistic benchmarks
     const textReturnsWoW = returngoText ? parseFloatNum(returngoText, [/Returns WoW[:\s]+([+-]?[\d.]+)%?/i, /Total Returns WoW[:\s]+([+-]?[\d.]+)%?/i]) : null;

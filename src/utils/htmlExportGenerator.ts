@@ -757,10 +757,10 @@ export function generateStandaloneInteractiveHTML(options: HTMLGeneratorOptions)
         P2: Freshdesk &amp; Calls
       </button>
       <button onclick="scrollToPage('wbr-page-3')" class="bg-gray-100 hover:bg-blue-50 text-gray-800 hover:text-[#003876] font-bold px-2.5 py-1 rounded border border-gray-200 cursor-pointer">
-        P3: ReturnGO RMAs
+        P3: Parcelninja Fulfilment
       </button>
       <button onclick="scrollToPage('wbr-page-4')" class="bg-gray-100 hover:bg-blue-50 text-gray-800 hover:text-[#003876] font-bold px-2.5 py-1 rounded border border-gray-200 cursor-pointer">
-        P4: Parcelninja Shipments
+        P4: ReturnGO RMAs &amp; Commercials
       </button>
     </div>
 

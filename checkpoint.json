@@ -2,8 +2,8 @@
   "data": {
     "data": {
       "reportingPeriod": {
-        "startDate": "2026-09-14",
-        "endDate": "2026-09-20"
+        "startDate": "2026-09-21",
+        "endDate": "2026-09-27"
       },
       "shopify": {
         "totalOrders": 554,
@@ -171,7 +171,7 @@
         "ticketsClosed": 189,
         "resolvedTickets": 189,
         "ticketsResolvedWoW": 0,
-        "openBacklog": 34,
+        "openBacklog": 12,
         "backlogWoW": 0,
         "avgFrustResponseTime": 1.2,
         "avgFirstResponseTime": 1.2,

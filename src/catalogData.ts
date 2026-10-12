@@ -231,9 +231,9 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
 
-  // C. Returns Management / RMA (Pages 1, 2, 3)
+  // C. Returns Management / RMA (Pages 1, 2, 4)
   {
-    pageNumber: 'Page 2 & 3',
+    pageNumber: 'Page 2 & 4',
     section: 'C. ReturnGo RMA',
     category: 'Returns Volume',
     metric: 'Total Returns Requested (RMAs)',
@@ -246,7 +246,7 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
   {
-    pageNumber: 'Page 1 & 3',
+    pageNumber: 'Page 1 & 4',
     section: 'C. ReturnGo RMA',
     category: 'Returns Volume',
     metric: 'Return Rate %',
@@ -259,7 +259,7 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
   {
-    pageNumber: 'Page 2 & 3',
+    pageNumber: 'Page 2 & 4',
     section: 'C. ReturnGo RMA',
     category: 'Processing Performance',
     metric: 'Average Return Cycle Time',
@@ -272,7 +272,7 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
   {
-    pageNumber: 'Page 2',
+    pageNumber: 'Page 4',
     section: 'C. ReturnGo RMA',
     category: 'Processing Performance',
     metric: 'Aged RMAs (> 7 Days)',
@@ -285,7 +285,7 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
   {
-    pageNumber: 'Page 3',
+    pageNumber: 'Page 4',
     section: 'C. ReturnGo RMA',
     category: 'Return Outcomes & Financials',
     metric: 'Refund Value (ZAR)',
@@ -298,7 +298,7 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
   {
-    pageNumber: 'Page 3',
+    pageNumber: 'Page 4',
     section: 'C. ReturnGo RMA',
     category: 'Return Outcomes & Financials',
     metric: 'Exchange & Store Credit Retention %',
@@ -311,7 +311,7 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
   {
-    pageNumber: 'Page 3',
+    pageNumber: 'Page 4',
     section: 'C. ReturnGo RMA',
     category: 'Strategic Insights',
     metric: 'Top Return Reason: Sizing Discrepancies',
@@ -324,9 +324,9 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
 
-  // D. Order & Shipment Oversight (Pages 1 & 4)
+  // D. Order & Shipment Oversight (Pages 1 & 3)
   {
-    pageNumber: 'Page 1 & 4',
+    pageNumber: 'Page 1 & 3',
     section: 'D. Order & Shipment Oversight',
     category: 'Order Fulfilment',
     metric: 'Total Orders Dispatched',
@@ -339,7 +339,7 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
   {
-    pageNumber: 'Page 4',
+    pageNumber: 'Page 3',
     section: 'D. Order & Shipment Oversight',
     category: 'Order Fulfilment',
     metric: 'Orders Pending Fulfilment',
@@ -352,7 +352,7 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
   {
-    pageNumber: 'Page 1 & 4',
+    pageNumber: 'Page 1 & 3',
     section: 'D. Order & Shipment Oversight',
     category: 'Shipment Performance',
     metric: 'Delivery Success Rate %',
@@ -365,7 +365,7 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
   {
-    pageNumber: 'Page 1 & 4',
+    pageNumber: 'Page 1 & 3',
     section: 'D. Order & Shipment Oversight',
     category: 'Shipment Performance',
     metric: 'Average Delivery Time (Days)',
@@ -378,7 +378,7 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
   {
-    pageNumber: 'Page 4',
+    pageNumber: 'Page 3',
     section: 'D. Order & Shipment Oversight',
     category: 'Shipment Performance',
     metric: 'In Transit Backlog',
@@ -391,7 +391,7 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
   {
-    pageNumber: 'Page 4',
+    pageNumber: 'Page 3',
     section: 'D. Order & Shipment Oversight',
     category: 'Courier Performance',
     metric: 'Failed Delivery / Undelivered Shipments',
@@ -404,9 +404,9 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
 
-  // E. Warehouse & Operational Health (Page 4)
+  // E. Warehouse & Operational Health (Page 3)
   {
-    pageNumber: 'Page 4',
+    pageNumber: 'Page 3',
     section: 'E. Warehouse Operational Health',
     category: 'Warehouse Quality',
     metric: 'Operational Exceptions / Variance',
@@ -419,7 +419,7 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
   {
-    pageNumber: 'Page 4',
+    pageNumber: 'Page 3',
     section: 'E. Warehouse Operational Health',
     category: 'Root-Cause Analysis',
     metric: 'Root-Cause Breakdown: Customer / Address Issue',
@@ -432,7 +432,7 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
   {
-    pageNumber: 'Page 4',
+    pageNumber: 'Page 3',
     section: 'E. Warehouse Operational Health',
     category: 'Root-Cause Analysis',
     metric: 'Root-Cause Breakdown: Courier Routing',
@@ -445,7 +445,7 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
   {
-    pageNumber: 'Page 4',
+    pageNumber: 'Page 3',
     section: 'E. Warehouse Operational Health',
     category: 'Root-Cause Analysis',
     metric: 'Root-Cause Breakdown: Warehouse / Packaging',
@@ -458,7 +458,7 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
   {
-    pageNumber: 'Page 4',
+    pageNumber: 'Page 3',
     section: 'E. Warehouse Operational Health',
     category: 'Dispatch Velocity',
     metric: 'Same-Day Dispatch Rate %',
@@ -471,9 +471,9 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
 
-  // G. Financial & Commercial Impact (Pages 1, 2, 3)
+  // G. Financial & Commercial Impact (Pages 1, 2, 4)
   {
-    pageNumber: 'Page 3',
+    pageNumber: 'Page 4',
     section: 'G. Financial & Commercial Impact',
     category: 'Commercial Risk',
     metric: 'Total Refund Financial Outflow',
@@ -486,7 +486,7 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
   {
-    pageNumber: 'Page 3',
+    pageNumber: 'Page 4',
     section: 'G. Financial & Commercial Impact',
     category: 'Commercial Risk',
     metric: 'Exchange & Credit Retained GMV',
@@ -499,7 +499,7 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
   {
-    pageNumber: 'Page 2 & 3',
+    pageNumber: 'Page 2 & 4',
     section: 'G. Financial & Commercial Impact',
     category: 'Commercial Risk',
     metric: 'Value of Unresolved / Aged Returns',
@@ -512,7 +512,7 @@ export const WBR_METRIC_CATALOG: CatalogItem[] = [
     evaluation: 'PASSED'
   },
   {
-    pageNumber: 'Page 1 & 3',
+    pageNumber: 'Page 1 & 4',
     section: 'G. Financial & Commercial Impact',
     category: 'Commercial Risk',
     metric: 'Estimated Cost of Support Contacts',
