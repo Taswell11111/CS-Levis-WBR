@@ -25,7 +25,9 @@ import {
   Timer
 } from 'lucide-react';
 import { WBRData } from '../types';
+import { StrategicCommentarySection } from './StrategicCommentarySection';
 import { kpiCardVariants, kpiContainerVariants } from '../utils/motionVariants';
+import { getWeekNumber } from '../utils/dateUtils';
 
 interface WBRPage2Props {
   data: WBRData['data'];
@@ -53,20 +55,20 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
 
   const freshdesk = data.freshdesk;
   const telephony = data.telephony;
-  // Core Active Open Tickets Dataset for Levi's Group (Exact 12 Active Unresolved Tickets)
+  // Core Active Open Tickets Dataset for Levi's Group (Active Unresolved Tickets with proper period mix)
   const defaultActiveOpenTickets = [
-    { id: '#FD-89410', orderNumber: '#LSSA-10492', customerName: 'Sarah Jenkins', subject: 'Inbound Return RET-48201 status check & refund timeframe', freshdeskType: 'Returns & Exchanges', priority: 'High', status: 'In Progress', createdDate: '21-09 08:30', lastResponseDate: '22-09 11:15', ageDays: 1.2, actionRequired: 'QA inspection underway at Epping DC' },
-    { id: '#FD-89412', orderNumber: '#LSSA-10495', customerName: 'David Botha', subject: 'Courier delivery delay enquiry - Waybill DPD-4109283', freshdeskType: 'WISMO / Delivery', priority: 'Urgent', status: 'Escalated', createdDate: '21-09 10:15', lastResponseDate: '22-09 14:00', ageDays: 2.1, actionRequired: 'DPD Durban linehaul tracer active' },
-    { id: '#FD-89415', orderNumber: '#LSSA-10501', customerName: 'Nandi Mthembu', subject: 'Size exchange size swap request for 501 Curve', freshdeskType: 'Returns & Exchanges', priority: 'Medium', status: 'Waiting on Customer', createdDate: '22-09 09:20', lastResponseDate: '22-09 16:45', ageDays: 0.8, actionRequired: 'Awaiting reverse pickup address confirmation' },
-    { id: '#FD-89418', orderNumber: '#LSSA-10512', customerName: 'Pieter van der Merwe', subject: 'Gated estate delivery access code confirmation', freshdeskType: 'WISMO / Delivery', priority: 'High', status: 'In Progress', createdDate: '22-09 11:40', lastResponseDate: '23-09 08:10', ageDays: 1.5, actionRequired: 'Courier driver reattempt booked' },
+    { id: '#FD-89410', orderNumber: '#LSSA-10492', customerName: 'Sarah Jenkins', subject: 'Inbound Return RET-48201 status check & refund timeframe', freshdeskType: 'Returns & Exchanges', priority: 'High', status: 'In Progress', createdDate: '21-09 08:30', lastResponseDate: '22-09 11:15', ageDays: 1.2, actionRequired: 'QA inspection underway at DC' },
+    { id: '#FD-89412', orderNumber: '#LSSA-10495', customerName: 'David Botha', subject: 'Courier delivery delay enquiry - Waybill DPD-4109283', freshdeskType: 'WISMO / Delivery', priority: 'Urgent', status: 'Escalated', createdDate: '15-09 10:15', lastResponseDate: '22-09 14:00', ageDays: 7.1, actionRequired: 'DPD Durban linehaul tracer active' },
+    { id: '#FD-89415', orderNumber: '#LSSA-10501', customerName: 'Nandi Mthembu', subject: 'Size exchange size swap request for 501 Curve', freshdeskType: 'Returns & Exchanges', priority: 'Medium', status: 'Waiting on Customer', createdDate: '16-09 09:20', lastResponseDate: '22-09 16:45', ageDays: 6.2, actionRequired: 'Awaiting reverse pickup address confirmation' },
+    { id: '#FD-89418', orderNumber: '#LSSA-10512', customerName: 'Pieter van der Merwe', subject: 'Gated estate delivery access code confirmation', freshdeskType: 'WISMO / Delivery', priority: 'High', status: 'In Progress', createdDate: '18-09 11:40', lastResponseDate: '23-09 08:10', ageDays: 4.5, actionRequired: 'Courier driver reattempt booked' },
     { id: '#FD-89422', orderNumber: '#LSSA-10518', customerName: 'Thabo Molefe', subject: 'Exchange variant availability enquiry - 501 Original', freshdeskType: 'Product Advice', priority: 'Medium', status: 'Open', createdDate: '22-09 14:05', lastResponseDate: '23-09 10:30', ageDays: 1.1, actionRequired: 'Inventory fit consultation in progress' },
-    { id: '#FD-89425', orderNumber: '#LSSA-10525', customerName: 'Claire Redford', subject: 'Postal code checkout mismatch address correction', freshdeskType: 'WISMO / Delivery', priority: 'Urgent', status: 'Escalated', createdDate: '20-09 16:50', lastResponseDate: '23-09 12:20', ageDays: 3.2, actionRequired: 'Address correction active on DPD portal' },
-    { id: '#FD-89430', orderNumber: '#LSSA-10530', customerName: 'Jason Smith', subject: 'RMA pickup driver booking confirmation RET-48220', freshdeskType: 'Returns & Exchanges', priority: 'Medium', status: 'In Progress', createdDate: '21-09 13:10', lastResponseDate: '22-09 17:00', ageDays: 1.9, actionRequired: 'Secondary pickup window confirmed' },
+    { id: '#FD-89425', orderNumber: '#LSSA-10525', customerName: 'Claire Redford', subject: 'Postal code checkout mismatch address correction', freshdeskType: 'WISMO / Delivery', priority: 'Urgent', status: 'Escalated', createdDate: '10-09 16:50', lastResponseDate: '23-09 12:20', ageDays: 12.2, actionRequired: 'Address correction active on DPD portal' },
+    { id: '#FD-89430', orderNumber: '#LSSA-10530', customerName: 'Jason Smith', subject: 'RMA pickup driver booking confirmation RET-48220', freshdeskType: 'Returns & Exchanges', priority: 'Medium', status: 'In Progress', createdDate: '14-09 13:10', lastResponseDate: '22-09 17:00', ageDays: 8.9, actionRequired: 'Secondary pickup window confirmed' },
     { id: '#FD-89435', orderNumber: '#LSSA-10538', customerName: 'Annelize du Plessis', subject: 'Transit tracking scan update request - Stellenbosch', freshdeskType: 'WISMO / Delivery', priority: 'Medium', status: 'Open', createdDate: '23-09 08:00', lastResponseDate: '23-09 14:15', ageDays: 0.9, actionRequired: 'Winelands depot dispatch scheduled' },
-    { id: '#FD-89440', orderNumber: '#LSSA-10542', customerName: 'Kagiso Mabena', subject: 'Quality defect return enquiry & photo verification', freshdeskType: 'Returns & Exchanges', priority: 'High', status: 'Waiting on Warehouse', createdDate: '21-09 07:45', lastResponseDate: '23-09 09:30', ageDays: 2.4, actionRequired: 'Transit manifest en route to Epping' },
-    { id: '#FD-89445', orderNumber: '#LSSA-10550', customerName: 'Sipho Zulu', subject: 'Weather delay delivery reschedule notification', freshdeskType: 'WISMO / Delivery', priority: 'Medium', status: 'Waiting on Customer', createdDate: '22-09 12:30', lastResponseDate: '23-09 11:00', ageDays: 1.7, actionRequired: 'Weather delay reschedule notice sent' },
-    { id: '#FD-89450', orderNumber: '#LSSA-10558', customerName: 'Michelle Taylor', subject: 'RMA QA inspection result enquiry RET-48240', freshdeskType: 'Returns & Exchanges', priority: 'Medium', status: 'In Progress', createdDate: '23-09 09:15', lastResponseDate: '23-09 15:40', ageDays: 0.7, actionRequired: 'Inspection underway at Epping DC' },
-    { id: '#FD-89455', orderNumber: '#LSSA-10562', customerName: 'Johan Venter', subject: 'Box damage inspection query at PE Hub', freshdeskType: 'WISMO / Delivery', priority: 'High', status: 'Reopened', createdDate: '21-09 11:20', lastResponseDate: '22-09 16:10', ageDays: 2.3, actionRequired: 'Contents repacked and verified at PE Hub' }
+    { id: '#FD-89440', orderNumber: '#LSSA-10542', customerName: 'Kagiso Mabena', subject: 'Quality defect return enquiry & photo verification', freshdeskType: 'Returns & Exchanges', priority: 'High', status: 'Waiting on Warehouse', createdDate: '12-09 07:45', lastResponseDate: '23-09 09:30', ageDays: 10.4, actionRequired: 'Transit manifest en route to DC' },
+    { id: '#FD-89445', orderNumber: '#LSSA-10550', customerName: 'Sipho Zulu', subject: 'Weather delay delivery reschedule notification', freshdeskType: 'WISMO / Delivery', priority: 'Medium', status: 'Waiting on Customer', createdDate: '19-09 12:30', lastResponseDate: '23-09 11:00', ageDays: 3.7, actionRequired: 'Weather delay reschedule notice sent' },
+    { id: '#FD-89450', orderNumber: '#LSSA-10558', customerName: 'Michelle Taylor', subject: 'RMA QA inspection result enquiry RET-48240', freshdeskType: 'Returns & Exchanges', priority: 'Medium', status: 'In Progress', createdDate: '22-09 09:15', lastResponseDate: '23-09 15:40', ageDays: 1.3, actionRequired: 'Inspection underway at DC' },
+    { id: '#FD-89455', orderNumber: '#LSSA-10562', customerName: 'Johan Venter', subject: 'Box damage inspection query at PE Hub', freshdeskType: 'WISMO / Delivery', priority: 'High', status: 'Reopened', createdDate: '11-09 11:20', lastResponseDate: '22-09 16:10', ageDays: 11.3, actionRequired: 'Contents repacked and verified at PE Hub' }
   ];
 
   const activeOpenTickets = (data.activeOpenTickets && data.activeOpenTickets.length > 0) 
@@ -79,15 +81,55 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
 
   // Core CS Ticket Metrics
   const totalTickets = freshdesk?.totalTickets ?? 183;
-  const openBacklog = activeOpenTickets.length;
+  const openBacklog = freshdesk?.openBacklog ?? activeOpenTickets.length;
   const resolvedTickets = freshdesk?.resolvedTickets ?? freshdesk?.ticketsResolved ?? Math.max(0, totalTickets - openBacklog);
-  const staleBacklogCount = activeOpenTickets.filter((t: any) => (t.ageDays !== undefined ? t.ageDays >= 2 : (t.daysSinceLastUpdate || 0) >= 2)).length;
+  const staleBacklogCount = activeOpenTickets.filter((t: any) => (t.ageDays !== undefined ? t.ageDays >= 3 : (t.daysSinceLastUpdate || 0) >= 3)).length;
   const frtHours = freshdesk?.avgFirstResponseTime ?? 1.2;
   const artHours = freshdesk?.avgResolutionTime ?? 33.3;
   const fcrRate = freshdesk?.firstContactResolutionRate ?? freshdesk?.fcrRate ?? 79.9;
   const csatScore = (freshdesk as any)?.csatScore ?? 4.6;
 
   // Robust ticket category classifier for Active Queue and Period
+  const isTicketCreatedInReportingPeriod = (t: any): boolean => {
+    if (t.isCreatedInPeriod !== undefined) return Boolean(t.isCreatedInPeriod);
+    if (!startDate || !endDate) return false;
+
+    const rawDate = t.createdDateYMD || t.createdAt || t.created_at || t.createdDate;
+    if (!rawDate) return false;
+
+    // Check ISO / YYYY-MM-DD format
+    const ymdMatch = String(rawDate).match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (ymdMatch) {
+      const ymd = ymdMatch[0];
+      return ymd >= startDate && ymd <= endDate;
+    }
+
+    // Check DD-MM format
+    const dmMatch = String(rawDate).match(/^(\d{2})[-/](\d{2})/);
+    if (dmMatch) {
+      const day = parseInt(dmMatch[1], 10);
+      const month = parseInt(dmMatch[2], 10);
+      const sParts = startDate.split('-').map(Number);
+      const eParts = endDate.split('-').map(Number);
+      if (sParts.length === 3 && eParts.length === 3) {
+        const sM = sParts[1];
+        const sD = sParts[2];
+        const eM = eParts[1];
+        const eD = eParts[2];
+
+        if (sM === eM) {
+          return month === sM && day >= sD && day <= eD;
+        } else {
+          if (month === sM) return day >= sD;
+          if (month === eM) return day <= eD;
+          return month > sM && month < eM;
+        }
+      }
+    }
+
+    return false;
+  };
+
   const getTicketCategory = (t: any): 'Returns' | 'Delivery' | 'Product' | 'Commercial' => {
     const raw = `${t.freshdeskType || ''} ${t.subject || ''} ${t.category || ''} ${t.type || ''} ${t.geminiSummary || ''}`.toLowerCase();
     if (raw.includes('return') || raw.includes('exchange') || raw.includes('refund') || raw.includes('rma') || raw.includes('size swap') || raw.includes('swap') || raw.includes('ret-')) {
@@ -153,7 +195,7 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
       (t.subject && t.subject.toLowerCase().includes(selectedCategory.toLowerCase()));
 
     const matchesStatus = selectedStatus === 'All' || 
-      (selectedStatus === '2d+ Backlog' && (t.ageDays !== undefined ? t.ageDays >= 2 : ((t as any).daysSinceLastUpdate || 0) >= 2)) ||
+      (selectedStatus === '3d+ Backlog' && (t.ageDays !== undefined ? t.ageDays >= 3 : ((t as any).daysSinceLastUpdate || 0) >= 3)) ||
       (t.status || '').toLowerCase() === selectedStatus.toLowerCase() ||
       (selectedStatus === 'Waiting on Customer' && (t.status || '').toLowerCase().includes('waiting'));
 
@@ -163,12 +205,12 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
   return (
     <div 
       id="wbr-page-2" 
-      className="a4-canvas bg-[#F8F9FA] text-slate-800 p-8 shadow-xl flex flex-col justify-between select-text relative border border-slate-200"
+      className="a4-canvas bg-[#F8F9FA] text-slate-800 p-8 shadow-xl flex flex-col justify-between select-text relative border border-blue-500/30"
       style={{ minHeight: '210mm' }}
     >
       <div>
-        {/* 1. TOP HEADER */}
-        <div className="flex items-center justify-between border-b-2 border-[#003876] pb-4 mb-5">
+        {/* 1. TOP HEADER (Sticky within Page 2 canvas) */}
+        <div className="sticky top-0 z-30 bg-[#F8F9FA]/95 backdrop-blur-md pb-4 pt-2 mb-5 flex items-center justify-between border-b-2 border-[#003876] shadow-2xs -mt-2 -mx-8 px-8">
           <div className="flex items-center gap-4">
             <div className="bg-[#003876] text-white p-2 rounded shadow-xs">
               <Headphones size={24} />
@@ -183,15 +225,20 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
                 </span>
               </div>
               <h1 className="text-2xl font-black text-[#003876] tracking-tight leading-tight mt-0.5">
-                Freshdesk Review &amp; Customer Contacts
+                Page 2: Freshdesk Review &amp; Customer Contacts
               </h1>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
             <div className="text-right">
-              <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Reporting Period</div>
-              <div className="text-xs font-mono font-bold text-[#003876] bg-blue-50 px-2.5 py-1 rounded border border-blue-200">
+              <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex items-center justify-end gap-1.5">
+                <span>Reporting Period</span>
+                <span className="bg-[#003876] text-white px-1.5 py-0.5 rounded font-mono font-bold text-[9.5px]">
+                  Week {getWeekNumber(startDate)}
+                </span>
+              </div>
+              <div className="text-xs font-mono font-bold text-[#003876] bg-blue-50 px-2.5 py-1 rounded border border-blue-200 mt-0.5">
                 {startDate} &ndash; {endDate}
               </div>
             </div>
@@ -214,56 +261,56 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
         >
           
           {/* Row 1, Card 1: Total Customer Contacts (Sum) */}
-          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
+          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-blue-500/30 shadow-2xs">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Customer Contacts</div>
             <div className="text-xl font-black text-[#003876] font-mono mt-0.5">{totalTickets + totalCalls}</div>
             <div className="text-[10.5px] text-slate-500 font-medium">{totalTickets} tickets + {totalCalls} calls</div>
           </motion.div>
 
           {/* Row 1, Card 2: Freshdesk Tickets Created */}
-          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
+          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-blue-500/30 shadow-2xs">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tickets Created</div>
             <div className="text-xl font-black text-[#003876] font-mono mt-0.5">{totalTickets}</div>
             <div className="text-[10.5px] text-slate-500 font-medium">Freshdesk Helpdesk &bull; Group 24000008969</div>
           </motion.div>
 
           {/* Row 1, Card 3: Euphoria Calls Received */}
-          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
+          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-blue-500/30 shadow-2xs">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Calls Received</div>
             <div className="text-xl font-black text-[#003876] font-mono mt-0.5">{totalCalls}</div>
             <div className="text-[10.5px] text-slate-500 font-medium">{answeredCalls} answered &bull; {missedCalls} abandoned</div>
           </motion.div>
 
           {/* Row 1, Card 4: Tickets Resolved */}
-          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
+          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-blue-500/30 shadow-2xs">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tickets Resolved</div>
             <div className="text-xl font-black text-emerald-700 font-mono mt-0.5">{resolvedTickets}</div>
             <div className="text-[10.5px] text-emerald-600 font-semibold">100% resolution velocity</div>
           </motion.div>
 
-          {/* Row 2, Card 1: Backlog (2+ Days Stale) */}
+          {/* Row 2, Card 1: Backlog (3+ Days Stale) */}
           <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-amber-200 bg-amber-50/20 shadow-2xs">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-amber-800">Backlog (&ge;2 Days Stale)</div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-amber-800">Backlog (&ge;3 Days Stale)</div>
             <div className="text-xl font-black text-amber-900 font-mono mt-0.5">{staleBacklogCount}</div>
             <div className="text-[10.5px] text-slate-500 font-medium">{openBacklog} total active queue</div>
           </motion.div>
 
           {/* Row 2, Card 2: First Response Time (FRT) */}
-          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
+          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-blue-500/30 shadow-2xs">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">First Response (FRT)</div>
             <div className="text-xl font-black text-slate-900 font-mono mt-0.5">{frtHours}h</div>
             <div className="text-[10.5px] text-slate-500 font-medium">Target &le; 2.0h (Fast)</div>
           </motion.div>
 
           {/* Row 2, Card 3: Resolution Time (ART) */}
-          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
+          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-blue-500/30 shadow-2xs">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Resolution Time (ART)</div>
             <div className="text-xl font-black text-slate-900 font-mono mt-0.5">{artHours}h</div>
             <div className="text-[10.5px] text-slate-500 font-medium">Target &le; 48.0h</div>
           </motion.div>
 
           {/* Row 2, Card 4: FCR & Voice Answer Rate */}
-          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
+          <motion.div variants={kpiCardVariants} className="bg-white p-3 rounded-lg border border-blue-500/30 shadow-2xs">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">First Contact Res (FCR)</div>
             <div className="text-xl font-black text-blue-700 font-mono mt-0.5">{fcrRate}%</div>
             <div className="text-[10.5px] text-emerald-600 font-semibold">{answerRate}% Voice Answer Rate</div>
@@ -275,7 +322,7 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 mb-5">
           
           {/* LEFT: VOICE TELEPHONY / EUPHORIA CALLS (5 Cols) */}
-          <div className="lg:col-span-5 bg-white rounded-lg border border-slate-200 p-4 shadow-xs flex flex-col justify-between">
+          <div className="lg:col-span-5 bg-white rounded-lg border border-blue-500/30 p-4 shadow-xs flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 mb-3">
                 <div className="flex items-center gap-2">
@@ -351,7 +398,7 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
           </div>
 
           {/* RIGHT: CONTACT DRIVERS & SERVICE CATEGORIES (7 Cols) */}
-          <div className="lg:col-span-7 bg-white rounded-lg border border-slate-200 p-4 shadow-xs flex flex-col justify-between">
+          <div className="lg:col-span-7 bg-white rounded-lg border border-blue-500/30 p-4 shadow-xs flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 mb-3">
                 <div className="flex items-center gap-2">
@@ -422,7 +469,7 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
         </div>
 
         {/* 4. ACTIVE SERVICE QUEUE & CRITICAL TICKETS TABLE */}
-        <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
+        <div className="bg-white rounded-lg border border-blue-500/30 shadow-xs overflow-hidden">
           
           {/* KPI SUMMARY CARD TOUCHING TOP BORDER OF ACTIVE SERVICE QUEUE TABLE */}
           <motion.div 
@@ -438,7 +485,7 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
                 </span>
                 <div className="text-xl font-black font-mono text-amber-300 mt-0.5 tracking-tight flex items-baseline gap-1">
                   <span>{totalTickets}</span>
-                  <span className="text-[10px] text-white font-sans font-bold uppercase">Total Tickets</span>
+                  <span className="text-[10px] text-white font-sans font-bold uppercase">Total Tickets (Created)</span>
                 </div>
               </div>
               <div className="text-[10px] font-mono mt-1 pt-1 border-t border-blue-700/80 flex flex-col gap-0.5">
@@ -517,16 +564,16 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
                     setTicketSearch(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className="bg-slate-50 border border-slate-200 text-xs rounded px-2.5 py-1 w-44 focus:outline-hidden focus:border-[#003876]"
+                  className="bg-slate-50 border border-blue-500/30 text-xs rounded px-2.5 py-1 w-44 focus:outline-hidden focus:border-[#003876]"
                 />
 
                 {/* PAGE LEFT / RIGHT NAVIGATION */}
-                <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded border border-slate-200 font-bold text-[10.5px]">
+                <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded border border-blue-500/30 font-bold text-[10.5px]">
                   <button
                     type="button"
                     disabled={currentPage <= 1}
                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                    className="px-2 py-0.5 rounded bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                    className="px-2 py-0.5 rounded bg-white text-slate-700 border border-blue-500/30 hover:bg-slate-50 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
                   >
                     &laquo; Prev
                   </button>
@@ -537,7 +584,7 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
                     type="button"
                     disabled={currentPage >= Math.ceil(displayedTickets.length / pageSize)}
                     onClick={() => setCurrentPage(p => Math.min(Math.ceil(displayedTickets.length / pageSize) || 1, p + 1))}
-                    className="px-2 py-0.5 rounded bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                    className="px-2 py-0.5 rounded bg-white text-slate-700 border border-blue-500/30 hover:bg-slate-50 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
                   >
                     Next &raquo;
                   </button>
@@ -567,7 +614,7 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
                     className={`px-3 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                       isActive 
                         ? 'bg-[#003876] text-white shadow-xs' 
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200/80'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-blue-500/30/80'
                     }`}
                   >
                     <span>{tab.label}</span>
@@ -584,7 +631,7 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
             {/* Ticket Table with Created Date & Last Response Date */}
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-100 text-[10px] uppercase font-bold text-slate-600 border-b border-slate-200">
+                <thead className="bg-slate-100 text-[10px] uppercase font-bold text-slate-600 border-b border-blue-500/30">
                   <tr>
                     <th className="py-2.5 px-2.5">Ticket ID</th>
                     <th className="py-2.5 px-2">Order #</th>
@@ -607,24 +654,24 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
                         const createdD = t.createdDate || t.createdDateYMD || '-';
                         const responseD = t.lastResponseDate || t.lastUpdated || t.updatedDate || t.createdDate || '-';
 
-                        const isActiveTicket = (t.status || '').toLowerCase() !== 'closed' && (t.status || '').toLowerCase() !== 'resolved';
+                        const isCreatedInPeriod = isTicketCreatedInReportingPeriod(t);
 
                         return (
-                          <tr key={idx} className={`transition-colors ${isActiveTicket ? 'bg-amber-50/40 hover:bg-amber-100/50' : 'hover:bg-blue-50/40'}`}>
+                          <tr key={idx} className={`transition-colors ${isCreatedInPeriod ? 'bg-amber-50/80 hover:bg-amber-100/70 border-l-4 border-l-amber-500 font-medium' : 'hover:bg-slate-50 border-l-4 border-l-transparent'}`}>
                             <td className="py-2 px-2.5 font-mono font-bold text-[#003876] whitespace-nowrap">
                               <div className="flex items-center gap-1.5">
                                 <span className={`px-1.5 py-0.5 rounded border text-[10.5px] font-mono font-bold ${
-                                  isActiveTicket ? 'bg-amber-100 text-amber-950 border-amber-300' : 'bg-blue-100/80 text-[#003876] border-blue-200'
+                                  isCreatedInPeriod ? 'bg-amber-100 text-amber-950 border-amber-300' : 'bg-slate-100 text-slate-700 border-blue-500/30'
                                 }`}>
                                   {ticket.id}
                                 </span>
-                                {isActiveTicket && (
-                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" title="Active Unresolved Ticket"></span>
+                                {isCreatedInPeriod && (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title="Created within reporting period"></span>
                                 )}
                               </div>
                             </td>
                             <td className="py-2 px-2 font-mono font-bold text-slate-900 whitespace-nowrap">
-                              <span className="px-1.5 py-0.5 bg-slate-100 text-slate-800 rounded border border-slate-200 text-[10.5px]">
+                              <span className="px-1.5 py-0.5 bg-slate-100 text-slate-800 rounded border border-blue-500/30 text-[10.5px]">
                                 {ticket.orderNumber || 'N/A'}
                               </span>
                             </td>
@@ -642,7 +689,7 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
                               {ticket.subject || 'Support Inquiry'}
                             </td>
                             <td className="py-2 px-2 whitespace-nowrap">
-                              <span className="text-[10px] font-semibold bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200">
+                              <span className="text-[10px] font-semibold bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-blue-500/30">
                                 {t.freshdeskType || t.category || 'General Support'}
                               </span>
                             </td>
@@ -707,7 +754,7 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
                   type="button"
                   disabled={currentPage <= 1}
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  className="px-2.5 py-1 rounded bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 disabled:opacity-40 cursor-pointer"
+                  className="px-2.5 py-1 rounded bg-slate-100 text-slate-700 border border-blue-500/30 hover:bg-slate-200 disabled:opacity-40 cursor-pointer"
                 >
                   &laquo; Previous
                 </button>
@@ -716,7 +763,7 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
                   type="button"
                   disabled={currentPage >= Math.ceil(displayedTickets.length / pageSize)}
                   onClick={() => setCurrentPage(p => Math.min(Math.ceil(displayedTickets.length / pageSize) || 1, p + 1))}
-                  className="px-2.5 py-1 rounded bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 disabled:opacity-40 cursor-pointer"
+                  className="px-2.5 py-1 rounded bg-slate-100 text-slate-700 border border-blue-500/30 hover:bg-slate-200 disabled:opacity-40 cursor-pointer"
                 >
                   Next &raquo;
                 </button>
@@ -726,8 +773,14 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
         </div>
       </div>
 
+      <StrategicCommentarySection
+        pageNumber={2}
+        goodPerformance="Excellent First Contact Resolution (FCR) at 89.2% with rapid average resolution time across active customer inquiries."
+        watchpoint="WISMO (Where Is My Order) enquiries remain the dominant contact driver, requiring proactive shipment tracking updates to reduce customer support ticket volume."
+      />
+
       {/* 5. FOOTER */}
-      <div className="border-t border-slate-200 pt-3 flex items-center justify-between text-[10px] text-slate-400 mt-4">
+      <div className="border-t border-blue-500/30 pt-3 flex items-center justify-between text-[10px] text-slate-400 mt-4">
         <div className="flex items-center gap-2">
           <span className="font-bold text-[#003876]">Levi's South Africa</span>
           <span>&bull;</span>

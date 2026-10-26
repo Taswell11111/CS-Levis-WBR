@@ -7,7 +7,7 @@ import * as dotenv from "dotenv";
 import NodeCache from "node-cache";
 import { fetchFreshdeskData } from "./src/services/freshdeskService";
 import { fetchReturnGoData } from "./src/services/returngoService";
-import { fetchParcelNinjaData } from "./src/services/parcelninjaService";
+import { fetchParcelNinjaData, fetchPriorNonDeliveredParcelNinjaData } from "./src/services/parcelninjaService";
 import { clearStaleGcsFiles, ensureGcsFolderHierarchy } from "./src/utils/gcsFolderCleaner";
 import { Synthesis } from "./src/types";
 
@@ -153,6 +153,10 @@ app.post("/api/gcs/push-to-live", async (req, res) => {
     const token = customToken || metadata.token;
     const timestampStr = new Date().toISOString().replace(/[-:T.]/g, "").slice(0, 14);
 
+    if (htmlContent) {
+      latestHtmlUploads[reportFilename] = { html: htmlContent, uploadedAt: new Date().toISOString() };
+    }
+
     let movedFiles: string[] = [];
 
     if (token) {
@@ -160,6 +164,13 @@ app.post("/api/gcs/push-to-live", async (req, res) => {
       const listUrl = `https://storage.googleapis.com/storage/v1/b/${GCS_CONFIG.bucket}/o?prefix=${encodeURIComponent("Upload and report generation archive/Live/")}`;
       const listRes = await fetch(listUrl, { headers: { Authorization: `Bearer ${token}` } });
       
+      // Helper function to check if object exists in GCS
+      const objectExists = async (objectPath: string) => {
+        const checkUrl = `https://storage.googleapis.com/storage/v1/b/${GCS_CONFIG.bucket}/o/${encodeURIComponent(objectPath)}`;
+        const res = await fetch(checkUrl, { method: 'HEAD', headers: { Authorization: `Bearer ${token}` } });
+        return res.ok;
+      };
+
       if (listRes.ok) {
         const listData: any = await listRes.json();
         const items = listData.items || [];
@@ -172,10 +183,16 @@ app.post("/api/gcs/push-to-live", async (req, res) => {
           const ext = extMatch ? extMatch[1] : '.html';
           const nameWithoutExt = baseName.replace(/(\.[^.]+)$/, '');
           
-          const archivedName = `Upload and report generation archive/Inactive/${nameWithoutExt}_archived_${timestampStr}${ext}`;
+          // Generate archived filename with _2, _3 suffix convention
+          let candidateArchivedName = `Upload and report generation archive/Inactive/${nameWithoutExt}_2${ext}`;
+          let version = 2;
+          while (await objectExists(candidateArchivedName)) {
+            version++;
+            candidateArchivedName = `Upload and report generation archive/Inactive/${nameWithoutExt}_${version}${ext}`;
+          }
           
           // Copy existing Live file to Inactive folder
-          const copyUrl = `https://storage.googleapis.com/storage/v1/b/${GCS_CONFIG.bucket}/o/${encodeURIComponent(item.name)}/copyTo/b/${GCS_CONFIG.bucket}/o/${encodeURIComponent(archivedName)}`;
+          const copyUrl = `https://storage.googleapis.com/storage/v1/b/${GCS_CONFIG.bucket}/o/${encodeURIComponent(item.name)}/copyTo/b/${GCS_CONFIG.bucket}/o/${encodeURIComponent(candidateArchivedName)}`;
           const copyRes = await fetch(copyUrl, {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}` }
@@ -207,21 +224,15 @@ app.post("/api/gcs/push-to-live", async (req, res) => {
         });
       };
 
-      // Step 2: Upload new report HTML snapshot to Root, Live, and Archive sub-folders
+      // Step 2: Upload new report HTML snapshot directly to Live folder
       if (htmlContent) {
-        await uploadObject(`${reportFilename}`, htmlContent, 'text/html; charset=utf-8');
         await uploadObject(`Upload and report generation archive/Live/${reportFilename}`, htmlContent, 'text/html; charset=utf-8');
-        await uploadObject(`Customer Service Weekly Business Review/${reportFilename}`, htmlContent, 'text/html; charset=utf-8');
-        await uploadObject(`Customer Service Weekly Business Review/business review Levi's/${reportFilename}`, htmlContent, 'text/html; charset=utf-8');
       }
 
-      // Step 3: Upload structured report JSON data
+      // Step 3: Upload structured report JSON data directly to Live folder
       if (reportData) {
         const jsonStr = typeof reportData === 'string' ? reportData : JSON.stringify(reportData, null, 2);
-        await uploadObject(`${jsonFilename}`, jsonStr, 'application/json');
         await uploadObject(`Upload and report generation archive/Live/${jsonFilename}`, jsonStr, 'application/json');
-        await uploadObject(`Customer Service Weekly Business Review/${jsonFilename}`, jsonStr, 'application/json');
-        await uploadObject(`Customer Service Weekly Business Review/business review Levi's/${jsonFilename}`, jsonStr, 'application/json');
       }
 
       // Automatically guarantee all folder keep markers exist on every upload
@@ -297,6 +308,7 @@ app.get("/reports/:filename", async (req, res) => {
 
     const candidatePaths = [
       `${filename}`,
+      `4-week department progression/${filename}`,
       `Upload and report generation archive/Live/${filename}`,
       `Customer Service Weekly Business Review/${filename}`,
       `Customer Service Weekly Business Review/business review Levi's/${filename}`
@@ -353,7 +365,7 @@ app.post("/api/gcs/upload-report", async (req, res) => {
     }
 
     const reportFilename = (filename || `Levis_WBR_${new Date().toISOString().slice(0, 10)}.html`).replace(/[^a-zA-Z0-9._-]/g, "_");
-    const objectPath = `${GCS_CONFIG.folder}/${reportFilename}`;
+    const targetLivePath = `${GCS_CONFIG.liveFolder}/${reportFilename}`;
 
     // Cache locally immediately for zero-delay instant public URL display
     latestHtmlUploads[reportFilename] = { html: htmlContent, uploadedAt: new Date().toISOString() };
@@ -370,56 +382,185 @@ app.post("/api/gcs/upload-report", async (req, res) => {
         success: true,
         message: "Report saved locally and ready for immediate public viewing.",
         bucket: GCS_CONFIG.bucket,
-        folder: GCS_CONFIG.folder,
+        folder: GCS_CONFIG.liveFolder,
         project: GCS_CONFIG.project,
         consoleUrl: GCS_CONFIG.consoleUrl,
         filename: reportFilename,
         cleanProxyUrl,
-        publicUrl: cleanProxyUrl,
+        publicUrl: `https://storage.googleapis.com/${GCS_CONFIG.bucket}/${encodeURIComponent(GCS_CONFIG.liveFolder)}/${encodeURIComponent(reportFilename)}`,
         serviceAccount: metadata.serviceAccount || null
       });
     }
 
-    // Upload to primary GCS folder and mirrors
-    const targets = [
-      objectPath,
-      `${GCS_CONFIG.liveFolder}/${reportFilename}`,
-      `${GCS_CONFIG.levisBusinessReviewFolder}/${reportFilename}`,
-      reportFilename
-    ];
+    // Helper function to check if object exists in GCS
+    const objectExists = async (objectPath: string) => {
+      const checkUrl = `https://storage.googleapis.com/storage/v1/b/${GCS_CONFIG.bucket}/o/${encodeURIComponent(objectPath)}`;
+      const checkRes = await fetch(checkUrl, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      return checkRes.ok;
+    };
 
-    for (const targetPath of targets) {
-      try {
-        const uploadUrl = `https://storage.googleapis.com/upload/storage/v1/b/${GCS_CONFIG.bucket}/o?uploadType=media&name=${encodeURIComponent(targetPath)}`;
-        await fetch(uploadUrl, {
+    // 1. Move any existing reports currently in Live to Inactive as filename_2 (or filename_N)
+    const listUrl = `https://storage.googleapis.com/storage/v1/b/${GCS_CONFIG.bucket}/o?prefix=${encodeURIComponent(GCS_CONFIG.liveFolder + '/')}`;
+    const listRes = await fetch(listUrl, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (listRes.ok) {
+      const listData: any = await listRes.json();
+      const items = listData.items || [];
+      for (const item of items) {
+        if (!item.name || item.name.endsWith('/.keep')) continue;
+        const currentBaseName = item.name.slice(GCS_CONFIG.liveFolder.length + 1);
+        if (!currentBaseName) continue;
+
+        let archiveBaseName = currentBaseName;
+        const dotIndex = currentBaseName.lastIndexOf('.');
+        const namePart = dotIndex > -1 ? currentBaseName.slice(0, dotIndex) : currentBaseName;
+        const extPart = dotIndex > -1 ? currentBaseName.slice(dotIndex) : '';
+
+        let candidateArchiveName = `${namePart}_2${extPart}`;
+        let counter = 2;
+        while (await objectExists(`${GCS_CONFIG.inactiveFolder}/${candidateArchiveName}`)) {
+          counter++;
+          candidateArchiveName = `${namePart}_${counter}${extPart}`;
+        }
+        const archiveDest = `${GCS_CONFIG.inactiveFolder}/${candidateArchiveName}`;
+
+        const copyUrl = `https://storage.googleapis.com/storage/v1/b/${GCS_CONFIG.bucket}/o/${encodeURIComponent(item.name)}/copyTo/b/${GCS_CONFIG.bucket}/o/${encodeURIComponent(archiveDest)}`;
+        const copyRes = await fetch(copyUrl, {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "text/html; charset=utf-8",
-            "Cache-Control": "no-cache, no-store, must-revalidate"
-          },
-          body: htmlContent
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
         });
-      } catch (e) {
-        console.warn(`Could not upload mirror to ${targetPath}:`, e);
+
+        if (copyRes.ok) {
+          const delUrl = `https://storage.googleapis.com/storage/v1/b/${GCS_CONFIG.bucket}/o/${encodeURIComponent(item.name)}`;
+          await fetch(delUrl, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` }
+          });
+        }
       }
     }
 
-    const publicUrl = cleanProxyUrl;
-    const liveGcsUrl = `https://storage.googleapis.com/${GCS_CONFIG.bucket}/${encodeURIComponent(objectPath)}`;
+    // 2. Upload new HTML report directly into Live
+    const uploadUrl = `https://storage.googleapis.com/upload/storage/v1/b/${GCS_CONFIG.bucket}/o?uploadType=media&name=${encodeURIComponent(targetLivePath)}`;
+    await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-cache, no-store, must-revalidate"
+      },
+      body: htmlContent
+    });
+
+    const liveGcsUrl = `https://storage.googleapis.com/${GCS_CONFIG.bucket}/${encodeURIComponent(targetLivePath)}`;
+    const publicUrl = liveGcsUrl;
 
     return res.json({
       success: true,
-      message: "Report successfully uploaded to Google Cloud Storage & available live!",
+      message: `Report successfully uploaded to Google Cloud Storage Live folder (${GCS_CONFIG.liveFolder}) & available live!`,
       bucket: GCS_CONFIG.bucket,
-      folder: GCS_CONFIG.folder,
+      folder: GCS_CONFIG.liveFolder,
       project: GCS_CONFIG.project,
       filename: reportFilename,
-      objectPath,
+      objectPath: targetLivePath,
       consoleUrl: GCS_CONFIG.consoleUrl,
       cleanProxyUrl,
       publicUrl,
       liveGcsUrl,
+      sizeBytes: htmlContent.length
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Upload 4-week department progression HTML snapshot to GCS bucket under "4-week department progression" folder with versioning (_v1, _v2, etc.)
+app.post("/api/gcs/upload-progression-report", async (req, res) => {
+  try {
+    const { htmlContent, department, customToken } = req.body;
+
+    if (!htmlContent) {
+      return res.status(400).json({ success: false, error: "Missing htmlContent in request body." });
+    }
+
+    const folderName = "4-week department progression";
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const deptTag = (department || "all").toLowerCase().replace(/[^a-z0-9]/g, "_");
+
+    const metadata = await getGcpMetadataToken();
+    const token = customToken || metadata.token;
+
+    // Helper function to check if object exists in GCS or memory
+    const objectExists = async (objectPath: string) => {
+      const bareName = objectPath.split("/").pop() || "";
+      if (latestHtmlUploads[bareName]) return true;
+      if (!token) return false;
+      const checkUrl = `https://storage.googleapis.com/storage/v1/b/${GCS_CONFIG.bucket}/o/${encodeURIComponent(objectPath)}`;
+      const checkRes = await fetch(checkUrl, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      return checkRes.ok;
+    };
+
+    // Calculate version suffix: _v1, _v2, _v3 etc.
+    let versionNum = 1;
+    const baseFilename = `4_week_progression_${deptTag}_${todayStr}`;
+    let candidateFilename = `${baseFilename}_v${versionNum}.html`;
+
+    while (await objectExists(`${folderName}/${candidateFilename}`)) {
+      versionNum++;
+      candidateFilename = `${baseFilename}_v${versionNum}.html`;
+    }
+
+    const targetGcsPath = `${folderName}/${candidateFilename}`;
+
+    // Cache locally immediately for zero-delay instant public URL display
+    latestHtmlUploads[candidateFilename] = { html: htmlContent, uploadedAt: new Date().toISOString() };
+
+    const host = req.get("host") || "localhost:3000";
+    const protocol = req.protocol === "https" || req.get("x-forwarded-proto") === "https" ? "https" : "http";
+    const cleanProxyUrl = `${protocol}://${host}/reports/${encodeURIComponent(candidateFilename)}`;
+    const publicUrl = `https://storage.googleapis.com/${GCS_CONFIG.bucket}/${encodeURIComponent(folderName)}/${encodeURIComponent(candidateFilename)}`;
+    const consoleUrl = `https://console.cloud.google.com/storage/browser/${GCS_CONFIG.bucket}/${encodeURIComponent(folderName)}`;
+
+    if (token) {
+      // 1. Ensure folder marker exists
+      const markerPath = `${folderName}/.keep`;
+      const markerUrl = `https://storage.googleapis.com/upload/storage/v1/b/${GCS_CONFIG.bucket}/o?uploadType=media&name=${encodeURIComponent(markerPath)}`;
+      await fetch(markerUrl, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "text/plain" },
+        body: "Folder Keep Marker"
+      }).catch(() => {});
+
+      // 2. Upload HTML snapshot to target folder
+      const uploadUrl = `https://storage.googleapis.com/upload/storage/v1/b/${GCS_CONFIG.bucket}/o?uploadType=media&name=${encodeURIComponent(targetGcsPath)}`;
+      await fetch(uploadUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-cache, no-store, must-revalidate"
+        },
+        body: htmlContent
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: `Successfully uploaded to folder '${folderName}' as ${candidateFilename}!`,
+      bucket: GCS_CONFIG.bucket,
+      folder: folderName,
+      filename: candidateFilename,
+      version: `v${versionNum}`,
+      objectPath: targetGcsPath,
+      publicUrl,
+      cleanProxyUrl,
+      consoleUrl,
       sizeBytes: htmlContent.length
     });
   } catch (err: any) {
@@ -1074,6 +1215,159 @@ ${(result.contactDrivers || []).slice(0, 5).map((d, i) => `  ${i + 1}. ${d.name}
   }
 });
 
+// Dedicated Connection & Record Range Verification endpoint
+app.post("/api/verify-connections", async (req, res) => {
+  try {
+    const { startDate = "2026-10-12", endDate = "2026-10-18", shopifyText = "", returngoText = "", parcelninjaText = "", freshdeskText = "", euphoriaText = "" } = req.body || {};
+    
+    // 1. Shopify Verification (Ingested via report text / CSV, no direct API keys configured)
+    const hasShopifyText = Boolean(shopifyText && shopifyText.trim().length > 0);
+    const shopifyConnected = hasShopifyText;
+    const parseNum = (text: string, patterns: RegExp[]): number | null => {
+      for (const pattern of patterns) {
+        const match = text.match(pattern);
+        if (match && match[1]) {
+          const val = parseInt(match[1].replace(/,/g, ""), 10);
+          if (!isNaN(val)) return val;
+        }
+      }
+      return null;
+    };
+    const shopifyPaidOrders = hasShopifyText ? parseNum(shopifyText, [/Paid Orders[:\s]+([0-9,]+)/i, /Total Orders[:\s]+([0-9,]+)/i, /Orders[:\s]+([0-9,]+)/i]) : null;
+    const shopifyStatus = hasShopifyText 
+      ? "Report Text Ingested (No direct API credentials)" 
+      : "No Direct API Configured (Ingested via Report Input)";
+    const shopifyFirstRecord = hasShopifyText 
+      ? `Ingested from Shopify WBR summary (${startDate})` 
+      : "N/A (No Shopify API credentials configured; data is supplied via report input)";
+    const shopifyLastRecord = hasShopifyText 
+      ? `Ingested from Shopify WBR summary (${endDate})` 
+      : "N/A (No Shopify API credentials configured; data is supplied via report input)";
+    const shopifyRecordCount = shopifyPaidOrders || (hasShopifyText ? 1 : 0);
+
+    // 2. ReturnGO Verification
+    let returngoConnected = false;
+    let rgaFirst = "N/A";
+    let rgaLast = "N/A";
+    let rgaCount = 0;
+    try {
+      const pReturngo = await fetchReturnGoData(startDate, endDate, shopifyPaidOrders || 429, returngoText);
+      returngoConnected = pReturngo.apiDiagnostic.connected || Boolean(returngoText.trim()) || pReturngo.allRMAs.length > 0;
+      rgaCount = pReturngo.allRMAs.length;
+      if (pReturngo.allRMAs.length > 0) {
+        const first = pReturngo.allRMAs[0];
+        const last = pReturngo.allRMAs[pReturngo.allRMAs.length - 1];
+        rgaFirst = `${first.createdDate || startDate} - RMA ${first.rmaNumber || first.id} (${first.customerName || 'Customer'} - ${first.reason || first.primaryReason || 'Return'})`;
+        rgaLast = `${last.createdDate || endDate} - RMA ${last.rmaNumber || last.id} (${last.customerName || 'Customer'} - ${last.reason || last.primaryReason || 'Return'})`;
+      }
+    } catch {
+      returngoConnected = Boolean(returngoText.trim());
+      rgaFirst = `${startDate} - Pending Live RMA Data`;
+      rgaLast = `${endDate} - Pending Live RMA Data`;
+    }
+
+    // 3. ParcelNinja Verification
+    let pnjConnected = false;
+    let pnjFirst = "N/A";
+    let pnjLast = "N/A";
+    let pnjCount = 0;
+    try {
+      const pPnj = await fetchParcelNinjaData(startDate, endDate, parcelninjaText);
+      pnjConnected = pPnj.apiDiagnostic.connected || Boolean(parcelninjaText.trim()) || (pPnj.summary?.totalOutbounds || 0) > 0;
+      pnjCount = pPnj.summary?.totalOutbounds || pPnj.parcelninja?.totalShipmentsCount || 0;
+      const recents = pPnj.summary?.recentShipments || pPnj.parcelninja?.recentShipments || [];
+      if (recents.length > 0) {
+        const first = recents[recents.length - 1];
+        const last = recents[0];
+        pnjFirst = `${first.createDate || startDate} - Shipment ${first.shipmentId || first.orderNumber} (Courier: ${first.courier} - Status: ${first.status})`;
+        pnjLast = `${last.createDate || endDate} - Shipment ${last.shipmentId || last.orderNumber} (Courier: ${last.courier} - Status: ${last.status})`;
+      }
+    } catch {
+      pnjConnected = Boolean(parcelninjaText.trim());
+      pnjFirst = `${startDate} - Pending Live Shipment Data`;
+      pnjLast = `${endDate} - Pending Live Shipment Data`;
+    }
+
+    // 4. Freshdesk Verification
+    let fdConnected = false;
+    let fdFirst = "N/A";
+    let fdLast = "N/A";
+    let fdCount = 0;
+    try {
+      const pFd = await fetchFreshdeskData(startDate, endDate, freshdeskText);
+      fdConnected = Boolean(freshdeskText.trim()) || Boolean(pFd.freshdesk);
+      fdCount = pFd.freshdesk?.totalTickets || pFd.periodCreatedTickets?.length || 0;
+      const tix = pFd.periodCreatedTickets || [];
+      if (tix.length > 0) {
+        const first = tix[0];
+        const last = tix[tix.length - 1];
+        fdFirst = `${first.createdDate || startDate} - Ticket ${first.id} (${first.customerName || 'Customer'} - ${first.freshdeskType || 'Enquiry'})`;
+        fdLast = `${last.createdDate || endDate} - Ticket ${last.id} (${last.customerName || 'Customer'} - ${last.freshdeskType || 'Enquiry'})`;
+      }
+    } catch {
+      fdConnected = Boolean(freshdeskText.trim());
+      fdFirst = `${startDate} - Pending Live Ticket Data`;
+      fdLast = `${endDate} - Pending Live Ticket Data`;
+    }
+
+    // 5. Euphoria Telephony Verification
+    const hasEuphText = Boolean(euphoriaText && euphoriaText.trim().length > 0);
+    const euphConnected = hasEuphText;
+    const euphStatus = hasEuphText ? "Telephony Feed Ingested" : "No Telephony Text Provided";
+    const euphFirst = hasEuphText ? `Ingested telephony log (${startDate})` : "N/A";
+    const euphLast = hasEuphText ? `Ingested telephony log (${endDate})` : "N/A";
+
+    res.json({
+      success: true,
+      timePeriod: { startDate, endDate },
+      integrations: {
+        shopify: {
+          name: "Shopify Orders & Fulfillment",
+          connected: shopifyConnected,
+          status: shopifyStatus,
+          firstRecord: shopifyFirstRecord,
+          lastRecord: shopifyLastRecord,
+          recordCount: shopifyRecordCount
+        },
+        returngo: {
+          name: "ReturnGO Reverse Logistics",
+          connected: returngoConnected,
+          status: returngoConnected ? "API Connected & Synced" : "Pending Data Feed",
+          firstRecord: rgaFirst,
+          lastRecord: rgaLast,
+          recordCount: rgaCount
+        },
+        parcelninja: {
+          name: "ParcelNinja Warehouse & Dispatch",
+          connected: pnjConnected,
+          status: pnjConnected ? "API Connected & Synced" : "Pending Data Feed",
+          firstRecord: pnjFirst,
+          lastRecord: pnjLast,
+          recordCount: pnjCount
+        },
+        freshdesk: {
+          name: "Freshdesk Customer Support",
+          connected: fdConnected,
+          status: fdConnected ? "API Connected & Synced" : "Pending Data Feed",
+          firstRecord: fdFirst,
+          lastRecord: fdLast,
+          recordCount: fdCount
+        },
+        euphoria: {
+          name: "Euphoria Voice Telephony",
+          connected: euphConnected,
+          status: euphStatus,
+          firstRecord: euphFirst,
+          lastRecord: euphLast,
+          recordCount: hasEuphText ? 1 : 0
+        }
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || "Failed to verify connections" });
+  }
+});
+
 // Checkpoint storage for Executive Dashboard
 let activeCheckpoint: any = null;
 const CHECKPOINT_FILE = path.join(process.cwd(), 'checkpoint.json');
@@ -1089,10 +1383,43 @@ try {
   console.error("Error reading checkpoint file:", e);
 }
 
+function normalizeReportVersions(reports: any[]) {
+  if (!Array.isArray(reports)) return;
+  const groups: { [key: string]: any[] } = {};
+  reports.forEach((r) => {
+    const rawId = String(r.id || `week-${r.weekNumber || 'unknown'}`);
+    const baseId = r.baseReportId || (rawId.includes('-v') ? rawId.replace(/-v\d+$/, '') : rawId);
+    if (!groups[baseId]) groups[baseId] = [];
+    groups[baseId].push(r);
+  });
+
+  Object.values(groups).forEach((group) => {
+    group.sort((a, b) => {
+      const vA = a.version || 0;
+      const vB = b.version || 0;
+      if (vA !== vB) return vA - vB;
+      const tA = new Date(a.publishedAt || a.createdAt || 0).getTime();
+      const tB = new Date(b.publishedAt || b.createdAt || 0).getTime();
+      return tA - tB;
+    });
+
+    group.forEach((item, idx) => {
+      if (!item.version) {
+        item.version = idx + 1;
+      }
+      item.versionLabel = `v${item.version}`;
+      item.versionPrefix = `v${item.version}`;
+      item.baseReportId = item.baseReportId || (item.id ? String(item.id).replace(/-v\d+$/, '') : `week-${item.weekNumber || 'unknown'}`);
+      item.isLatestVersion = (idx === group.length - 1);
+    });
+  });
+}
+
 try {
   if (fs.existsSync(WEEKLY_REPORTS_FILE)) {
     weeklyReportsArchive = JSON.parse(fs.readFileSync(WEEKLY_REPORTS_FILE, 'utf-8'));
-    console.log(`Loaded ${weeklyReportsArchive.length} weekly reports from disk`);
+    normalizeReportVersions(weeklyReportsArchive);
+    console.log(`Loaded ${weeklyReportsArchive.length} weekly reports from disk with versioning`);
   }
 } catch (e) {
   console.error("Error reading weekly_reports.json file:", e);
@@ -1102,6 +1429,7 @@ app.get("/api/reports/weekly", (req, res) => {
   try {
     if (fs.existsSync(WEEKLY_REPORTS_FILE)) {
       weeklyReportsArchive = JSON.parse(fs.readFileSync(WEEKLY_REPORTS_FILE, 'utf-8'));
+      normalizeReportVersions(weeklyReportsArchive);
     }
   } catch (e) {
     console.error("Error re-reading weekly_reports.json:", e);
@@ -1112,21 +1440,111 @@ app.get("/api/reports/weekly", (req, res) => {
 app.post("/api/reports/weekly", (req, res) => {
   try {
     const report = req.body;
-    if (!report || !report.id) {
-      return res.status(400).json({ success: false, error: "Report payload with id is required" });
+    if (!report || (!report.id && !report.weekNumber)) {
+      return res.status(400).json({ success: false, error: "Report payload with id or weekNumber is required" });
     }
-    const existingIdx = weeklyReportsArchive.findIndex((r: any) => r.id === report.id || (r.startDate === report.startDate && r.endDate === report.endDate));
-    if (existingIdx >= 0) {
-      weeklyReportsArchive[existingIdx] = { ...weeklyReportsArchive[existingIdx], ...report, updatedAt: new Date().toISOString() };
+
+    normalizeReportVersions(weeklyReportsArchive);
+
+    const baseWeekNumber = report.weekNumber || (report.id ? parseInt(String(report.id).match(/week-(\d+)/)?.[1] || '0', 10) : 0);
+    const rawId = String(report.id || `week-${baseWeekNumber || '0'}-2026`);
+    const baseReportId = report.baseReportId || (rawId.includes('-v') ? rawId.replace(/-v\d+$/, '') : rawId);
+
+    // Find all existing versions for this week/period
+    const matchingVersions = weeklyReportsArchive.filter((r: any) => {
+      const rBaseId = r.baseReportId || (r.id ? String(r.id).replace(/-v\d+$/, '') : '');
+      const sameBaseId = Boolean(rBaseId && rBaseId === baseReportId);
+      const sameWeek = Boolean(baseWeekNumber > 0 && r.weekNumber === baseWeekNumber);
+      const sameDates = Boolean(report.startDate && report.endDate && r.startDate === report.startDate && r.endDate === report.endDate);
+      return sameBaseId || sameWeek || sameDates;
+    });
+
+    let assignedVersion = 1;
+    let versionLabel = 'v1';
+
+    if (report.createNewVersion !== false && matchingVersions.length > 0) {
+      // Increment past the highest existing version to PREVENT OVERWRITING PAST DATA
+      const maxVersion = matchingVersions.reduce((max: number, r: any) => Math.max(max, Number(r.version) || 1), 0);
+      assignedVersion = maxVersion + 1;
+      versionLabel = `v${assignedVersion}`;
+    } else if (report.version) {
+      assignedVersion = Number(report.version);
+      versionLabel = `v${assignedVersion}`;
+    }
+
+    // Mark previous versions for this week as not latest
+    matchingVersions.forEach((prev: any) => {
+      prev.isLatestVersion = false;
+    });
+
+    const nowIso = new Date().toISOString();
+    const newVersionedReport = {
+      ...report,
+      id: `${baseReportId}-${versionLabel}`,
+      baseReportId: baseReportId,
+      version: assignedVersion,
+      versionLabel: versionLabel,
+      versionPrefix: versionLabel,
+      isLatestVersion: true,
+      createdAt: report.createdAt || nowIso,
+      updatedAt: nowIso,
+      publishedAt: report.publishedAt || nowIso,
+      versionHistory: [
+        ...(report.versionHistory || (matchingVersions[0]?.versionHistory || [])),
+        {
+          version: assignedVersion,
+          versionLabel: versionLabel,
+          publishedAt: nowIso,
+          signOffBy: report.signOffBy || 'Operations Lead',
+          summaryNote: report.summaryNote || `Version ${versionLabel} update snapshot.`
+        }
+      ]
+    };
+
+    // If exact same ID and version already exists and overwrite requested:
+    const exactIdx = weeklyReportsArchive.findIndex((r: any) => r.id === newVersionedReport.id);
+    if (exactIdx >= 0 && report.overwriteSameVersion) {
+      weeklyReportsArchive[exactIdx] = { ...weeklyReportsArchive[exactIdx], ...newVersionedReport };
     } else {
-      weeklyReportsArchive.unshift({ ...report, createdAt: new Date().toISOString() });
+      // PRESERVE HISTORY: Add new version without overwriting past data
+      weeklyReportsArchive.unshift(newVersionedReport);
     }
+
+    normalizeReportVersions(weeklyReportsArchive);
+
     try {
       fs.writeFileSync(WEEKLY_REPORTS_FILE, JSON.stringify(weeklyReportsArchive, null, 2), 'utf-8');
     } catch (fsErr) {
       console.error("Error writing weekly_reports.json:", fsErr);
     }
-    res.json({ success: true, reports: weeklyReportsArchive });
+    res.json({ success: true, reports: weeklyReportsArchive, createdVersion: versionLabel, report: newVersionedReport });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Dedicated endpoint to manually update or rename the version prefix of a report item
+app.post("/api/reports/update-version-prefix", (req, res) => {
+  try {
+    const { reportId, newPrefix } = req.body;
+    if (!reportId || !newPrefix) {
+      return res.status(400).json({ success: false, error: "reportId and newPrefix are required" });
+    }
+    const cleanPrefix = String(newPrefix).trim();
+    const rep = weeklyReportsArchive.find((r: any) => r.id === reportId);
+    if (!rep) {
+      return res.status(404).json({ success: false, error: `Report ${reportId} not found` });
+    }
+    rep.versionPrefix = cleanPrefix;
+    rep.versionLabel = cleanPrefix.replace(/^v/i, '') ? cleanPrefix : `v${cleanPrefix}`;
+    rep.updatedAt = new Date().toISOString();
+
+    try {
+      fs.writeFileSync(WEEKLY_REPORTS_FILE, JSON.stringify(weeklyReportsArchive, null, 2), 'utf-8');
+    } catch (fsErr) {
+      console.error("Error writing weekly_reports.json:", fsErr);
+    }
+    res.json({ success: true, reports: weeklyReportsArchive, updatedReport: rep });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -1237,6 +1655,9 @@ app.post("/api/reports/update-stale-shipment-values", (req, res) => {
 });
 
 app.get("/api/checkpoint", (req, res) => {
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
   if (req.query.force || !activeCheckpoint) {
     try {
       if (fs.existsSync(CHECKPOINT_FILE)) {
@@ -1719,11 +2140,15 @@ app.post("/api/wbr-data", async (req, res) => {
     const parsedBottomProducts: any[] = [];
     let inTopProductsSection = false;
     let inBottomProductsSection = false;
+    let inDailySalesSection = false;
+    let inAgingSection = false;
+    let inSummarySection = false;
+    let inDiscussionSection = false;
 
-    // Helper parser for filtering invalid product lines (e.g. driver modals, UI artifacts)
+    // Helper parser for filtering invalid product lines (e.g. driver modals, UI artifacts, daily sales, headings)
     const isInvalidProduct = (name: string, sku?: string) => {
-      const n = (name || "").toLowerCase();
-      const s = (sku || "").toLowerCase();
+      const n = (name || "").toLowerCase().trim();
+      const s = (sku || "").toLowerCase().trim();
       return (
         n.includes("driver") ||
         n.includes("modal") ||
@@ -1731,7 +2156,30 @@ app.post("/api/wbr-data", async (req, res) => {
         n.includes("ticket") ||
         n.includes("return modal") ||
         s.includes("driver") ||
-        s.includes("modal")
+        s.includes("modal") ||
+        n.includes("daily paid") ||
+        n.includes("daily sales") ||
+        n.includes("orders & sales") ||
+        n.includes("orders | r") ||
+        /^\d{4}-\d{2}-\d{2}/.test(n) ||
+        /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(n) ||
+        n.includes("unfulfilled order aging") ||
+        n.includes("order aging") ||
+        /\b\d+\s+days?\s+old\b/i.test(n) ||
+        n.includes("shopify order") ||
+        n.includes("order & fulfilment") ||
+        n.includes("order & fulfillment") ||
+        n.includes("paid orders:") ||
+        n.includes("ranking aggregates") ||
+        n.includes("this ranks titles") ||
+        n.includes("values are merchandise") ||
+        n.includes("attribution uses") ||
+        n.includes("source: live shopify") ||
+        n.includes("reporting period:") ||
+        n.includes("executive discussion") ||
+        n.includes("top discount codes") ||
+        n.includes("revenue by marketing") ||
+        n.includes("utm source")
       );
     };
 
@@ -1746,6 +2194,10 @@ app.post("/api/wbr-data", async (req, res) => {
         inCampaignRevSection = false;
         inTopProductsSection = false;
         inBottomProductsSection = false;
+        inDailySalesSection = false;
+        inAgingSection = false;
+        inSummarySection = false;
+        inDiscussionSection = false;
         continue;
       }
       if (lower.includes("discount codes") || lower.includes("discount code") || lower.includes("promo codes") || lower.includes("vouchers")) {
@@ -1754,6 +2206,10 @@ app.post("/api/wbr-data", async (req, res) => {
         inTopProductsSection = false;
         inBottomProductsSection = false;
         inCommercialFlagsSection = false;
+        inDailySalesSection = false;
+        inAgingSection = false;
+        inSummarySection = false;
+        inDiscussionSection = false;
         continue;
       }
       if (lower.includes("revenue by marketing campaign") || lower.includes("revenue by campaign") || lower.includes("marketing campaign") || lower.includes("revenue by marketing") || lower.includes("utm source")) {
@@ -1762,9 +2218,63 @@ app.post("/api/wbr-data", async (req, res) => {
         inTopProductsSection = false;
         inBottomProductsSection = false;
         inCommercialFlagsSection = false;
+        inDailySalesSection = false;
+        inAgingSection = false;
+        inSummarySection = false;
+        inDiscussionSection = false;
+        continue;
+      }
+      if (lower.includes("daily paid orders & sales") || lower.includes("daily paid orders") || lower.includes("daily sales") || lower.startsWith("daily paid") || lower.includes("orders & sales:")) {
+        inDailySalesSection = true;
+        inTopProductsSection = false;
+        inBottomProductsSection = false;
+        inDiscountCodesSection = false;
+        inCampaignRevSection = false;
+        inCommercialFlagsSection = false;
+        inAgingSection = false;
+        inSummarySection = false;
+        inDiscussionSection = false;
+        continue;
+      }
+      if (lower.includes("unfulfilled order aging") || lower.includes("order aging") || lower.startsWith("aging uses")) {
+        inAgingSection = true;
+        inTopProductsSection = false;
+        inBottomProductsSection = false;
+        inDiscountCodesSection = false;
+        inCampaignRevSection = false;
+        inCommercialFlagsSection = false;
+        inDailySalesSection = false;
+        inSummarySection = false;
+        inDiscussionSection = false;
+        continue;
+      }
+      if (lower.includes("order & fulfilment summary") || lower.includes("order & fulfillment summary") || lower.includes("shopify order & fulfilment") || lower.includes("shopify order & fulfillment") || lower.startsWith("shopify order")) {
+        inSummarySection = true;
+        inTopProductsSection = false;
+        inBottomProductsSection = false;
+        inDiscountCodesSection = false;
+        inCampaignRevSection = false;
+        inCommercialFlagsSection = false;
+        inDailySalesSection = false;
+        inAgingSection = false;
+        inDiscussionSection = false;
+        continue;
+      }
+      if (lower.includes("executive discussion") || lower.includes("operational notes") || lower.includes("discussion & operational")) {
+        inDiscussionSection = true;
+        inTopProductsSection = false;
+        inBottomProductsSection = false;
+        inDiscountCodesSection = false;
+        inCampaignRevSection = false;
+        inCommercialFlagsSection = false;
+        inDailySalesSection = false;
+        inAgingSection = false;
+        inSummarySection = false;
         continue;
       }
       if (
+        lower.includes("bottom 5 slowest selling") ||
+        lower.includes("slowest selling products") ||
         lower.includes("bottom 5 products") ||
         lower.includes("lowest sales") ||
         lower.includes("bottom products") ||
@@ -1784,9 +2294,15 @@ app.post("/api/wbr-data", async (req, res) => {
         inDiscountCodesSection = false;
         inCampaignRevSection = false;
         inCommercialFlagsSection = false;
+        inDailySalesSection = false;
+        inAgingSection = false;
+        inSummarySection = false;
+        inDiscussionSection = false;
         continue;
       }
       if (
+        lower.includes("top 5 best selling") ||
+        lower.includes("best selling products") ||
         lower.includes("top 5 products") ||
         lower.includes("products ordered") ||
         lower.includes("products by quantity") ||
@@ -1805,6 +2321,10 @@ app.post("/api/wbr-data", async (req, res) => {
         inDiscountCodesSection = false;
         inCampaignRevSection = false;
         inCommercialFlagsSection = false;
+        inDailySalesSection = false;
+        inAgingSection = false;
+        inSummarySection = false;
+        inDiscussionSection = false;
         continue;
       }
       if (lower.startsWith("---") || lower.startsWith("===") || (lower.startsWith("--") && !lower.includes("top") && !lower.includes("bottom") && !lower.includes("flag"))) {
@@ -1814,6 +2334,10 @@ app.post("/api/wbr-data", async (req, res) => {
           inTopProductsSection = false;
           inBottomProductsSection = false;
           inCommercialFlagsSection = false;
+          inDailySalesSection = false;
+          inAgingSection = false;
+          inSummarySection = false;
+          inDiscussionSection = false;
         }
         continue;
       }
@@ -1913,6 +2437,31 @@ app.post("/api/wbr-data", async (req, res) => {
       const parseProductFromLine = (ln: string) => {
         const clean = ln.trim();
         if (!clean || clean.startsWith("---") || clean.startsWith("===") || clean.toLowerCase().startsWith("rank") || (clean.toLowerCase().startsWith("sku") && clean.includes("|") && clean.toLowerCase().includes("product"))) {
+          return null;
+        }
+
+        const low = clean.toLowerCase();
+        if (
+          low.startsWith("ranking aggregates") ||
+          low.startsWith("this ranks") ||
+          low.startsWith("values are") ||
+          low.startsWith("attribution uses") ||
+          low.startsWith("missing utm") ||
+          low.startsWith("*") ||
+          low.startsWith("aging uses") ||
+          low.startsWith("source:") ||
+          low.startsWith("reporting period") ||
+          low.startsWith("commercial performance") ||
+          low.startsWith("fulfilment:") ||
+          low.startsWith("fulfillment:") ||
+          low.startsWith("stock alerts:") ||
+          low.startsWith("recommended action:") ||
+          low.includes("daily paid") ||
+          low.includes("daily sales") ||
+          low.includes("orders & sales") ||
+          /^\d{4}-\d{2}-\d{2}/.test(clean) ||
+          /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(clean)
+        ) {
           return null;
         }
 
@@ -2085,15 +2634,21 @@ app.post("/api/wbr-data", async (req, res) => {
 
       if (inTopProductsSection) {
         const item = parseProductFromLine(line);
-        if (item && !isInvalidProduct(item.name, item.sku)) parsedProducts.push(item);
-      } else if (inBottomProductsSection) {
-        const item = parseProductFromLine(line);
-        if (item && !isInvalidProduct(item.name, item.sku)) parsedBottomProducts.push(item);
-      } else if (!inDiscountCodesSection && !inCampaignRevSection) {
-        // Fallback: if a line clearly represents a top product line with pipe and SKU/Category/Units
-        const item = parseProductFromLine(line);
         if (item && !isInvalidProduct(item.name, item.sku) && parsedProducts.length < 5) {
           parsedProducts.push(item);
+        }
+      } else if (inBottomProductsSection) {
+        const item = parseProductFromLine(line);
+        if (item && !isInvalidProduct(item.name, item.sku) && parsedBottomProducts.length < 5) {
+          parsedBottomProducts.push(item);
+        }
+      } else if (!inDiscountCodesSection && !inCampaignRevSection && !inDailySalesSection && !inAgingSection && !inSummarySection && !inDiscussionSection) {
+        // Fallback: ONLY if line clearly contains "units sold" and "available stock" and is not an invalid product
+        if (line.toLowerCase().includes("units sold") && line.toLowerCase().includes("available stock")) {
+          const item = parseProductFromLine(line);
+          if (item && !isInvalidProduct(item.name, item.sku) && parsedProducts.length < 5) {
+            parsedProducts.push(item);
+          }
         }
       }
     }
@@ -2118,7 +2673,7 @@ app.post("/api/wbr-data", async (req, res) => {
     };
 
     if (parsedProducts.length === 0 || parsedBottomProducts.length === 0) {
-      const secMatch = shopifyText.match(/(?:TOP 5 & BOTTOM 5 PRODUCTS|TOP 5 PRODUCTS|TOP PRODUCTS):?([\s\S]*?)(?:TOP DISCOUNT CODES|DISCOUNT CODES|REVENUE BY CAMPAIGN|UNFULFILLED|DAILY PAID|EXECUTIVE DISCUSSION|$)/i);
+      const secMatch = shopifyText.match(/(?:TOP 5 BEST SELLING PRODUCTS|TOP 5 & BOTTOM 5 PRODUCTS|TOP 5 PRODUCTS|TOP PRODUCTS|BEST SELLING PRODUCTS):?([\s\S]*?)(?:BOTTOM 5|SLOWEST SELLING|LEAST BOUGHT|LOWEST SALES|TOP DISCOUNT CODES|DISCOUNT CODES|REVENUE BY CAMPAIGN|UNFULFILLED|DAILY PAID|EXECUTIVE DISCUSSION|$)/i);
       const content = secMatch ? secMatch[1] : shopifyText;
       const parts = content.split(/Bottom 5|bottom 5|lowest sales|least bought|slowest selling|lowest selling/i);
       const topPart = parts[0] || '';
@@ -2131,6 +2686,7 @@ app.post("/api/wbr-data", async (req, res) => {
         let idx = 0;
         while ((m = regex.exec(str)) !== null) {
           const name = m[1].replace(/^(?:Top|Bottom)\s*\d+[^:]*:\s*/i, '').trim();
+          if (isInvalidProduct(name)) continue;
           const units = parseInt(m[2].replace(/,/g, ''), 10);
           const sales = parseFloat(m[3].replace(/,/g, ''));
           const stock = parseInt(m[4].replace(/,/g, ''), 10);
@@ -2152,11 +2708,13 @@ app.post("/api/wbr-data", async (req, res) => {
 
       if (parsedProducts.length === 0) {
         const extractedTop = extractRegexItems(topPart, false);
-        if (extractedTop.length > 0) parsedProducts.push(...extractedTop);
+        if (extractedTop.length > 0) parsedProducts.push(...extractedTop.slice(0, 5));
       }
-      if (parsedBottomProducts.length === 0 && bottomPart) {
-        const extractedBottom = extractRegexItems(bottomPart, true);
-        if (extractedBottom.length > 0) parsedBottomProducts.push(...extractedBottom);
+      if (parsedBottomProducts.length === 0) {
+        const botSecMatch = shopifyText.match(/(?:BOTTOM 5 SLOWEST SELLING PRODUCTS|BOTTOM 5 PRODUCTS|SLOWEST SELLING PRODUCTS|LEAST BOUGHT PRODUCTS|LOWEST SALES PRODUCTS):?([\s\S]*?)(?:TOP DISCOUNT CODES|DISCOUNT CODES|REVENUE BY CAMPAIGN|EXECUTIVE DISCUSSION|$)/i);
+        const botContent = botSecMatch ? botSecMatch[1] : bottomPart;
+        const extractedBottom = extractRegexItems(botContent, true);
+        if (extractedBottom.length > 0) parsedBottomProducts.push(...extractedBottom.slice(0, 5));
       }
     }
 
@@ -2820,23 +3378,30 @@ app.post("/api/wbr-data", async (req, res) => {
       }
     };
 
-    const [freshdeskData, returngoData, parcelninjaData] = await Promise.all([
+    const [freshdeskData, returngoData, parcelninjaData, priorNonDeliveredParcelNinja] = await Promise.all([
       withSafety(
         () => fetchFreshdeskData(startDateParam, endDateParam, freshdeskText),
-        8500,
+        25000,
         { freshdesk: null, ticketCategories: [], contactDrivers: [], riskTickets: [], contactDriverTickets: [], activeOpenTickets: [], periodCreatedTickets: [], warehouseAffectedOrders: [] }
       ),
       withSafety(
         () => fetchReturnGoData(startDateParam, endDateParam, shopify.totalOrders, returngoText),
-        3500,
+        20000,
         { returngo: null, allRMAs: [], activeOpenRMAs: [], topReturnedProducts: [], apiDiagnostic: { connected: false, status: 500, message: "ReturnGo API connection failed." } }
       ),
       withSafety(
         () => fetchParcelNinjaData(startDateParam, endDateParam, parcelninjaText),
-        3500,
+        15000,
         { parcelninja: null, warehouseDeliveryInsights: { staleShipmentsCount: 0, statusPipeline: [], staleShipments: [] } as any, apiDiagnostic: { connected: false, status: 500, message: "ParcelNinja API connection failed." } }
+      ),
+      withSafety(
+        () => fetchPriorNonDeliveredParcelNinjaData(startDateParam),
+        10000,
+        []
       )
     ]);
+    
+    parcelninjaData.priorNonDelivered = priorNonDeliveredParcelNinja;
 
     // Dynamic WoW calculation against previous week report in archive if available
     const prevReport = weeklyReportsArchive.find((r: any) => 
@@ -3047,7 +3612,9 @@ Use British English UK spelling throughout. Return ONLY valid JSON.`;
       statuses
     };
 
-    cache.set(cacheKey, payload, 180);
+    const isHistorical = new Date(endDateParam).getTime() < Date.now() - 24 * 3600 * 1000;
+    const ttlSeconds = isHistorical ? 86400 : 300;
+    cache.set(cacheKey, payload, ttlSeconds);
     res.json(payload);
   } catch (error: any) {
     console.error("Global Server Error in /api/wbr-data:", error.stack || error);

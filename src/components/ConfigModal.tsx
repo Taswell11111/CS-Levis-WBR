@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, FileText, PhoneCall, RefreshCw, Undo2, RotateCcw, AlertCircle, ShieldAlert, Calendar } from 'lucide-react';
+import { X, FileText, PhoneCall, RefreshCw, Undo2, RotateCcw, AlertCircle, ShieldAlert, Calendar, ShieldCheck, CheckCircle2, Database, Activity } from 'lucide-react';
 import { getDatesFromWeek } from '../utils/dateUtils';
+import axios from 'axios';
 
 interface ConfigModalProps {
   isOpen: boolean;
@@ -54,6 +55,8 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
   const [startDate, setStartDate] = useState(initialStartDate);
   const [endDate, setEndDate] = useState(initialEndDate);
   const [weekNumber, setWeekNumber] = useState<string>('');
+  const [verifying, setVerifying] = useState(false);
+  const [verifyData, setVerifyData] = useState<any>(null);
 
   if (!isOpen) return null;
 
@@ -85,6 +88,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
     setReturngoText('');
     setParcelninjaText('');
     setFreshdeskText('');
+    setVerifyData(null);
   };
 
   const handleLoadAllSamples = () => {
@@ -95,15 +99,38 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
     setFreshdeskText(SAMPLE_FRESHDESK);
   };
 
+  const handleVerifyConnections = async () => {
+    setVerifying(true);
+    setVerifyData(null);
+    try {
+      const res = await axios.post('/api/verify-connections', {
+        startDate,
+        endDate,
+        shopifyText,
+        returngoText,
+        parcelninjaText,
+        freshdeskText,
+        euphoriaText
+      });
+      if (res.data.success) {
+        setVerifyData(res.data);
+      }
+    } catch (err: any) {
+      alert("Failed to verify connections: " + (err.message || 'Unknown error'));
+    } finally {
+      setVerifying(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-      <div className="bg-white rounded-lg shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-gray-200">
+      <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-gray-200">
         
         {/* MODAL HEADER */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-[#003876] text-white">
           <div className="flex items-center gap-2">
             <span className="bg-[#C41230] text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase">Input Center</span>
-            <h3 className="text-base font-bold">Manual Operational Data & Report Inputs</h3>
+            <h3 className="text-base font-bold">Manual Operational Data & Record Range Connection Validator</h3>
           </div>
           <button 
             onClick={onClose}
@@ -113,7 +140,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
           </button>
         </div>
 
-        {/* DATES BAR */}
+        {/* DATES & VERIFICATION BAR */}
         <div className="bg-gray-50 px-6 py-3 border-b border-gray-200 flex flex-wrap items-center justify-between gap-4 text-xs">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 border-r border-gray-300 pr-4">
@@ -123,7 +150,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
                 value={weekNumber}
                 onChange={(e) => setWeekNumber(e.target.value)}
                 className="border border-gray-300 rounded px-2 py-1 bg-white text-gray-800 w-16"
-                placeholder="39"
+                placeholder="42"
               />
               <button
                 type="button"
@@ -156,11 +183,22 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={handleVerifyConnections}
+              disabled={verifying}
+              className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3 py-1.5 rounded shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-colors"
+              title="Verify first and last record range and live data connections for all integrations"
+            >
+              <Activity size={13} className={verifying ? "animate-spin" : ""} />
+              <span>{verifying ? "Verifying Records..." : "Check First/Last Records & Connections"}</span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleClearAll}
-              className="text-[11px] bg-red-50 text-red-700 hover:bg-red-100 font-bold px-2.5 py-1 rounded border border-red-200 flex items-center gap-1 cursor-pointer"
+              className="text-[11px] bg-red-50 text-red-700 hover:bg-red-100 font-bold px-2.5 py-1.5 rounded border border-red-200 flex items-center gap-1 cursor-pointer"
               title="Clear all manual inputs to verify that unknown values strictly display N/A"
             >
-              <Undo2 size={12} /> Clear (Test N/A)
+              <Undo2 size={12} /> Clear
             </button>
           </div>
         </div>
@@ -220,7 +258,47 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
         </div>
 
         {/* TAB BODY */}
-        <div className="p-6 overflow-y-auto flex-grow">
+        <div className="p-6 overflow-y-auto flex-grow space-y-4">
+          {verifyData && (
+            <div className="bg-emerald-50 border border-emerald-300 rounded-lg p-4 shadow-xs">
+              <div className="flex items-center justify-between border-b border-emerald-200 pb-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck size={18} className="text-emerald-700" />
+                  <h4 className="text-xs font-black text-emerald-900 uppercase tracking-wider">
+                    Live Connections & Record Range Verification ({verifyData.timePeriod.startDate} to {verifyData.timePeriod.endDate})
+                  </h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setVerifyData(null)}
+                  className="text-emerald-700 hover:text-emerald-900 text-xs font-bold cursor-pointer"
+                >
+                  Close Results
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {Object.entries(verifyData.integrations).map(([key, intg]: [string, any]) => (
+                  <div key={key} className="bg-white p-3 rounded border border-emerald-200 shadow-2xs flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-bold text-[#003876]">{intg.name}</span>
+                        <span className={`text-[9.5px] font-mono px-2 py-0.5 rounded font-bold ${intg.connected ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                          {intg.status}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-gray-500 space-y-1 mt-2 font-mono">
+                        <div><strong className="text-gray-700">First Record:</strong> {intg.firstRecord}</div>
+                        <div><strong className="text-gray-700">Last Record:</strong> {intg.lastRecord}</div>
+                        <div><strong className="text-gray-700">Records in Period:</strong> {intg.recordCount} verified</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {activeTab === 'shopify' && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">

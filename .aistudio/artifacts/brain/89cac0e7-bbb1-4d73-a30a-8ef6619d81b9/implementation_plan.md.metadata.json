@@ -1,0 +1,6 @@
+{
+  "summary":  "Revised implementation plan explicitly detailing the category selection mechanism (Freshdesk & Calls, Parcelninja, ReturnGO, and Combined) both directly on the landing portal gateway card and via sticky department switcher tabs inside the full-screen 4-week progression view.",
+  "updatedAt":  "2026-10-21T09:34:43.718688380Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

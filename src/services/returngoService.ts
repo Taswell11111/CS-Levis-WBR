@@ -82,15 +82,71 @@ function parseReturnGoText(
     };
   }
 
+  // Extract ReturnGO Dashboard Status Shortcuts (e.g. Manage Your Returns)
+  let attentionRMAs: number | null = null;
+  let pendingApprovalRMAs: number | null = null;
+  let toSendRMAs: number | null = null;
+  let inTransitRMAs: number | null = null;
+  let receivedToResolveRMAs: number | null = null;
+
+  const lines = returngoText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const nextLine = lines[i + 1] || "";
+    const combined = `${line} ${nextLine}`;
+
+    if (/require your attention|attention/i.test(combined) && attentionRMAs === null) {
+      const m = line.match(/([\d,]+)/) || nextLine.match(/([\d,]+)/);
+      if (m) attentionRMAs = parseInt(m[1].replace(/,/g, ""), 10);
+    }
+    if (/pending return requests to approve|pending/i.test(combined) && pendingApprovalRMAs === null) {
+      const m = line.match(/([\d,]+)/) || nextLine.match(/([\d,]+)/);
+      if (m) pendingApprovalRMAs = parseInt(m[1].replace(/,/g, ""), 10);
+    }
+    if (/return shipments to be sent|to be sent|shipments to be sent/i.test(combined) && toSendRMAs === null) {
+      const m = line.match(/([\d,]+)/) || nextLine.match(/([\d,]+)/);
+      if (m) toSendRMAs = parseInt(m[1].replace(/,/g, ""), 10);
+    }
+    if (/return shipments in transit|in transit/i.test(combined) && inTransitRMAs === null) {
+      const m = line.match(/([\d,]+)/) || nextLine.match(/([\d,]+)/);
+      if (m) inTransitRMAs = parseInt(m[1].replace(/,/g, ""), 10);
+    }
+    if (/received shipments to resolve|received/i.test(combined) && receivedToResolveRMAs === null) {
+      const m = line.match(/([\d,]+)/) || nextLine.match(/([\d,]+)/);
+      if (m) receivedToResolveRMAs = parseInt(m[1].replace(/,/g, ""), 10);
+    }
+  }
+
+  const attentionMatch = returngoText.match(/(?:(?:^|\n)\s*(\d+)\s*\n?\s*Return requests that require your attention|Return requests that require your attention[:\s\n]+([\d,]+))/i);
+  if (attentionRMAs === null && attentionMatch) attentionRMAs = parseInt(attentionMatch[1] || attentionMatch[2], 10);
+
+  const pendingApproveMatch = returngoText.match(/(?:(?:^|\n)\s*(\d+)\s*\n?\s*Pending return requests to approve|Pending return requests to approve[:\s\n]+([\d,]+))/i);
+  if (pendingApprovalRMAs === null && pendingApproveMatch) pendingApprovalRMAs = parseInt(pendingApproveMatch[1] || pendingApproveMatch[2], 10);
+
+  const toSendMatch = returngoText.match(/(?:(?:^|\n)\s*(\d+)\s*\n?\s*Return shipments to be sent|Return shipments to be sent[:\s\n]+([\d,]+))/i);
+  if (toSendRMAs === null && toSendMatch) toSendRMAs = parseInt(toSendMatch[1] || toSendMatch[2], 10);
+
+  const inTransitMatch = returngoText.match(/(?:(?:^|\n)\s*(\d+)\s*\n?\s*Return shipments in transit|Return shipments in transit[:\s\n]+([\d,]+))/i);
+  if (inTransitRMAs === null && inTransitMatch) inTransitRMAs = parseInt(inTransitMatch[1] || inTransitMatch[2], 10);
+
+  const receivedMatch = returngoText.match(/(?:(?:^|\n)\s*(\d+)\s*\n?\s*Received shipments to resolve|Received shipments to resolve[:\s\n]+([\d,]+))/i);
+  if (receivedToResolveRMAs === null && receivedMatch) receivedToResolveRMAs = parseInt(receivedMatch[1] || receivedMatch[2], 10);
+
+  const hasShortcuts = attentionRMAs !== null || pendingApprovalRMAs !== null || toSendRMAs !== null || inTransitRMAs !== null || receivedToResolveRMAs !== null;
+  const shortcutActiveTotal = (attentionRMAs || 0) + (pendingApprovalRMAs || 0) + (toSendRMAs || 0) + (inTransitRMAs || 0) + (receivedToResolveRMAs || 0);
+
   const totalReturns = parseNum(returngoText, [
     /(?:Returns requested|Total Returns|Returns|Returns received and requested)[:\s]+([\d,]+)/i
-  ]);
-  const returnsReceived = parseNum(returngoText, [
+  ]) ?? (hasShortcuts ? shortcutActiveTotal : null);
+
+  const returnsReceived = receivedToResolveRMAs ?? parseNum(returngoText, [
     /(?:Returns received|Received at Warehouse|Received Returns|Received)[:\s]+([\d,]+)/i
   ]);
-  const outstandingRMAs = parseNum(returngoText, [
-    /(?:Outstanding RMAs|Outstanding Returns|Pending RMAs)[:\s]+([\d,]+)/i
+
+  const outstandingRMAs = (hasShortcuts && shortcutActiveTotal > 0 ? shortcutActiveTotal : null) ?? parseNum(returngoText, [
+    /(?:Outstanding RMAs|Outstanding Returns|Pending RMAs|Active RMAs)[:\s]+([\d,]+)/i
   ]);
+
   const agedRMAs = parseNum(returngoText, [
     /(?:Aged > 7 days|Aged RMAs|Aged Returns)[:\s]+([\d,]+)/i
   ]);
@@ -109,8 +165,8 @@ function parseReturnGoText(
 
   // Extract reasons from text if available
   const parsedReasons: { name: string; value: number }[] = [];
-  const lines = returngoText.split(/\r?\n/);
-  for (const line of lines) {
+  const rmaLines = returngoText.split(/\r?\n/);
+  for (const line of rmaLines) {
     const rm = line.match(/(?:^|[-*•]\s*)([A-Za-z0-9\s/&'-]+?)\s*[:=-]\s*(\d+)(?:\s*(?:items?|requests?|returns?|\([\d.]+%\)))?/i);
     if (rm && !rm[1].toLowerCase().includes("total") && !rm[1].toLowerCase().includes("rate") && !rm[1].toLowerCase().includes("orders") && !rm[1].toLowerCase().includes("aged") && !rm[1].toLowerCase().includes("cycle") && !rm[1].toLowerCase().includes("outstanding") && !rm[1].toLowerCase().includes("received")) {
       const name = rm[1].trim();
@@ -126,7 +182,15 @@ function parseReturnGoText(
   let finalDetailedReasons: any[] = [];
   let finalRmaPipeline: any[] = DEFAULT_RMA_PIPELINE;
 
-  if (effectiveTotal > 0 && finalRmaPipeline.length === 0) {
+  if (hasShortcuts && shortcutActiveTotal > 0) {
+    finalRmaPipeline = [
+      { stage: "Requires Attention", count: attentionRMAs || 0, percentage: Number((((attentionRMAs || 0) / shortcutActiveTotal) * 100).toFixed(1)), status: "ACTION_REQUIRED" },
+      { stage: "Pending Approval", count: pendingApprovalRMAs || 0, percentage: Number((((pendingApprovalRMAs || 0) / shortcutActiveTotal) * 100).toFixed(1)), status: "PENDING" },
+      { stage: "Shipments to be Sent", count: toSendRMAs || 0, percentage: Number((((toSendRMAs || 0) / shortcutActiveTotal) * 100).toFixed(1)), status: "CUSTOMER_PENDING" },
+      { stage: "Shipments in Transit", count: inTransitRMAs || 0, percentage: Number((((inTransitRMAs || 0) / shortcutActiveTotal) * 100).toFixed(1)), status: "IN_TRANSIT" },
+      { stage: "Received Shipments to Resolve", count: receivedToResolveRMAs || 0, percentage: Number((((receivedToResolveRMAs || 0) / shortcutActiveTotal) * 100).toFixed(1)), status: "RECEIVED_TO_RESOLVE" }
+    ];
+  } else if (effectiveTotal > 0 && finalRmaPipeline.length === 0) {
       finalRmaPipeline = [
           { stage: "Submitted", count: Math.round(effectiveTotal * 0.70), percentage: 70, avgDurationHours: 2, status: "OPEN" },
           { stage: "Approved", count: Math.round(effectiveTotal * 0.20), percentage: 20, avgDurationHours: 12, status: "APPROVED" },
@@ -208,7 +272,11 @@ function parseReturnGoText(
     returnRateWoW: parseFloatNum(returngoText, [/Rate WoW[:\s]+([+-]?[\d.]+)%?/i]) ?? 0,
     outstandingRMAs: outstandingRMAs ?? null,
     outstandingWoW: parseFloatNum(returngoText, [/Outstanding WoW[:\s]+([+-]?[\d.]+)%?/i]) ?? 0,
-    pendingRMAs: null,
+    pendingRMAs: pendingApprovalRMAs ?? null,
+    attentionRMAs: attentionRMAs ?? null,
+    toSendRMAs: toSendRMAs ?? null,
+    inTransitRMAs: inTransitRMAs ?? null,
+    receivedToResolveRMAs: receivedToResolveRMAs ?? null,
     agedRMAs: agedRMAs ?? null,
     agedWoWWoW: parseFloatNum(returngoText, [/Aged WoW[:\s]+([+-]?[\d.]+)%?/i]) ?? 0,
     avgOpenRmaDays: avgOpenRmaDays ?? null,
@@ -237,6 +305,7 @@ function parseReturnGoText(
 }
 
 const rmaDetailCache = new Map<string, any>();
+const returngoResultCache = new Map<string, { time: number; data: ReturnGoResult }>();
 let rateLimitedUntil = 0;
 let cachedRateLimitDiagnostic: ApiDiagnostic | null = null;
 
@@ -246,6 +315,14 @@ export async function fetchReturnGoData(
   totalShopifyOrders: number | null,
   returngoText?: string
 ): Promise<ReturnGoResult> {
+  const cacheKey = `${startDateParam}_${endDateParam}_${totalShopifyOrders || 0}_${(returngoText || "").slice(0, 30)}`;
+  const cached = returngoResultCache.get(cacheKey);
+  const isHistorical = new Date(endDateParam).getTime() < Date.now() - 24 * 3600 * 1000;
+  const ttl = isHistorical ? 86400000 : 300000;
+  if (cached && Date.now() - cached.time < ttl) {
+    return cached.data;
+  }
+
   const returnGoKey = process.env.RETURNGO_API_KEY || "";
   const returnGoShop = process.env.RETURNGO_SHOP_NAME || "levis-sa.myshopify.com";
 
@@ -254,10 +331,6 @@ export async function fetchReturnGoData(
     status: null,
     message: returnGoKey ? "Pending connection" : "RETURNGO_API_KEY not configured"
   };
-
-  if (Date.now() < rateLimitedUntil && cachedRateLimitDiagnostic) {
-    return parseReturnGoText(returngoText || "", totalShopifyOrders, cachedRateLimitDiagnostic, startDateParam, endDateParam);
-  }
 
   if (!returnGoKey) {
     return parseReturnGoText(returngoText || "", totalShopifyOrders, apiDiagnostic, startDateParam, endDateParam);
@@ -268,20 +341,20 @@ export async function fetchReturnGoData(
     const startGMT2 = new Date(`${startDateParam}T00:00:00+02:00`).getTime();
     const endGMT2 = new Date(`${endDateParam}T23:59:59.999+02:00`).getTime();
 
-    // Use ReturnGo API rma_created_at filter to begin pagination exactly at or before endDateParam
+    // Paginate through ReturnGo API until reaching past startGMT2
     let allRMAs: any[] = [];
     let cursor: string | null = null;
     let pagesFetched = 0;
 
-    while (pagesFetched < 5) {
-      const rmaUrl = `https://api.returngo.ai/rmas?pagesize=100&rma_created_at=${encodeURIComponent(`lte:${endDateParam}T23:59:59`)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+    while (pagesFetched < 25) {
+      const rmaUrl = `https://api.returngo.ai/rmas?pagesize=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
       const response = await axios.get(rmaUrl, {
         headers: {
           accept: "application/json",
           "x-shop-name": returnGoShop,
           "x-api-key": returnGoKey
         },
-        timeout: 8000
+        timeout: 10000
       });
 
       const pageRmas = response.data.rmas || [];
@@ -293,7 +366,7 @@ export async function fetchReturnGoData(
       if (pageRmas.length > 0) {
         const oldestRma = pageRmas[pageRmas.length - 1];
         const oldestCreatedEvt = (oldestRma.events || []).find((e: any) => e.eventName === "RMA_CREATED" || e.eventName === "CREATED");
-        const oldestDateStr = oldestRma.created_at || oldestRma.createdAt || oldestRma.rma_created_at || oldestCreatedEvt?.eventDate || oldestRma.creationDate;
+        const oldestDateStr = oldestCreatedEvt?.eventDate || oldestRma.created_at || oldestRma.createdAt || oldestRma.rma_created_at || oldestRma.creationDate;
         if (oldestDateStr && new Date(oldestDateStr).getTime() < startGMT2) {
           break;
         }
@@ -305,7 +378,7 @@ export async function fetchReturnGoData(
     // Filter strictly within GMT+2 (SAST) reporting period using created_at timestamps
     const getRmaCreatedTime = (r: any): number => {
       const createdEvt = (r.events || []).find((e: any) => e.eventName === "RMA_CREATED" || e.eventName === "CREATED");
-      const d = r.created_at || r.createdAt || r.rma_created_at || createdEvt?.eventDate || r.creationDate;
+      const d = createdEvt?.eventDate || r.created_at || r.createdAt || r.rma_created_at || r.creationDate;
       return d ? new Date(d).getTime() : 0;
     };
 
@@ -706,7 +779,7 @@ export async function fetchReturnGoData(
       if (st === "pending") actionRequired = "Awaiting CS confirmation of payment gateway reversal approval.";
       else if (st === "approved") actionRequired = `${r.carrierName || 'The Courier Guy'} waybill generated; awaiting collection scan.`;
       else if (st.includes("transit")) actionRequired = `Parcel in transit to DC; tracking: ${r.trackingNumber || 'Active'}.`;
-      else if (st === "received") actionRequired = "Delivered to Epping DC; QA inspection required to trigger automatic voucher release.";
+      else if (st === "received") actionRequired = "Delivered to Parcelninja DC; QA inspection required to trigger automatic voucher release.";
 
       const rmaNum = r.rmaNumber || `RMA-${r.rmaId || r.id}`;
       const ordName = r.orderName || (r.order_name ? (r.order_name.startsWith('#') ? r.order_name : `#${r.order_name}`) : '#LSSA-Order');
@@ -800,7 +873,9 @@ export async function fetchReturnGoData(
       }
     };
 
-    return { returngo, allRMAs: normalizedRMAs, activeOpenRMAs, topReturnedProducts, apiDiagnostic, summary };
+    const finalResult = { returngo, allRMAs: normalizedRMAs, activeOpenRMAs, topReturnedProducts, apiDiagnostic, summary };
+    returngoResultCache.set(cacheKey, { time: Date.now(), data: finalResult });
+    return finalResult;
   } catch (err: any) {
     const statusCode = err.response?.status || 500;
     const errorMsg = err.response?.data?.message || err.message || "Failed to connect to ReturnGo API";

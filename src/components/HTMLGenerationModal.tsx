@@ -156,13 +156,17 @@ export const HTMLGenerationModal: React.FC<HTMLGenerationModalProps> = ({
       const result = await res.json();
 
       if (res.ok && result.success) {
-        const cleanPublicUrl = result.cleanProxyUrl || `${window.location.origin}/reports/${result.filename || filename}`;
+        // Explicitly use the public GCS bucket file URL rather than localhost proxy
+        const publicBucketUrl = (result.publicUrl && !result.publicUrl.includes('localhost') && !result.publicUrl.includes('/reports/'))
+          ? result.publicUrl
+          : `https://storage.googleapis.com/${GCS_BUCKET_INFO.bucket}/${GCS_BUCKET_INFO.folder.split('/').map(encodeURIComponent).join('/')}/${encodeURIComponent(result.filename || filename)}`;
+
         setUploadStatus({
           state: 'success',
           filename: result.filename || filename,
           objectPath: result.objectPath,
           consoleUrl: result.consoleUrl || GCS_BUCKET_INFO.consoleUrl,
-          publicUrl: cleanPublicUrl,
+          publicUrl: publicBucketUrl,
           message: `HTML downloaded to PC and successfully uploaded to gs://${GCS_BUCKET_INFO.bucket}/${GCS_BUCKET_INFO.folder}/${filename}`
         });
       } else {

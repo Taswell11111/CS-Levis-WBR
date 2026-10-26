@@ -18,9 +18,10 @@ export interface HTMLGeneratorOptions {
 
 export const GCS_BUCKET_INFO = {
   bucket: "ai-studio-bucket-275737853276-us-west1",
-  folder: "Customer Service Weekly Business Review",
+  folder: "Upload and report generation archive/Live",
+  archiveFolder: "Upload and report generation archive/Inactive",
   project: "levis-report",
-  consoleUrl: "https://console.cloud.google.com/storage/browser/ai-studio-bucket-275737853276-us-west1/Customer%20Service%20Weekly%20Business%20Review"
+  consoleUrl: "https://console.cloud.google.com/storage/browser/ai-studio-bucket-275737853276-us-west1/Upload%20and%20report%20generation%20archive/Live"
 };
 
 export function generateStandaloneInteractiveHTML(options: HTMLGeneratorOptions): string {
@@ -482,51 +483,9 @@ export function generateStandaloneInteractiveHTML(options: HTMLGeneratorOptions)
         const btnOut = document.getElementById('btn-zoom-out');
         const btnToggle = document.getElementById('btn-zoom-toggle');
         const btnReset = document.getElementById('btn-zoom-reset');
-        const btnPanMode = document.getElementById('btn-zoom-pan');
-        const dragHint = document.getElementById('zoom-drag-hint');
-
         if (!report) return;
 
         let currentZoom = parseFloat(slider ? slider.value : '1') || 1;
-        let isPanMode = false;
-        let isSpacePressed = false;
-
-        window.addEventListener('keydown', function(e) {
-          if (e.code === 'Space' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName || '')) {
-            isSpacePressed = true;
-            if (viewport) viewport.style.cursor = 'grab';
-          }
-        });
-        window.addEventListener('keyup', function(e) {
-          if (e.code === 'Space') {
-            isSpacePressed = false;
-            if (viewport) viewport.style.cursor = isPanMode ? 'grab' : 'default';
-          }
-        });
-
-        function updatePanModeUI() {
-          if (btnPanMode) {
-            btnPanMode.className = isPanMode
-              ? 'p-1.5 rounded-full transition-colors flex items-center gap-1 cursor-pointer text-xs bg-[#003876] text-white shadow-xs'
-              : 'p-1.5 rounded-full transition-colors flex items-center gap-1 cursor-pointer text-xs bg-gray-100 hover:bg-gray-200 text-gray-700';
-            btnPanMode.title = isPanMode 
-              ? 'Hand Tool active: Click and drag anywhere to pan. Click to switch to Text Selection mode' 
-              : 'Text Selection active: Highlight text or drag margins. Click to switch to Hand Tool';
-          }
-          if (viewport) {
-            viewport.style.cursor = isPanMode ? 'grab' : 'default';
-          }
-          if (dragHint) {
-            dragHint.innerText = isPanMode ? 'Drag to pan' : 'Select text or drag margins';
-          }
-        }
-
-        if (btnPanMode) {
-          btnPanMode.addEventListener('click', function() {
-            isPanMode = !isPanMode;
-            updatePanModeUI();
-          });
-        }
 
         function applyZoom(val, centerPoint) {
           currentZoom = Math.min(1.6, Math.max(0.5, parseFloat(val)));
@@ -637,62 +596,10 @@ export function generateStandaloneInteractiveHTML(options: HTMLGeneratorOptions)
           });
         });
 
-        // Drag to Pan in all directions (reveals left, right, top, bottom)
-        let isDragging = false;
-        let startX = 0;
-        let startY = 0;
-        let startScrollLeft = 0;
-        let startScrollY = 0;
-
-        clickTarget.addEventListener('mousedown', function(e) {
-          if (e.button !== 0 && e.button !== 1) return;
-          const target = e.target;
-          if (target && target.closest('button, input, select, textarea, a, [role="button"], .gcp-modal-backdrop')) {
-            return;
-          }
-
-          // Check if clicking directly on text content
-          const isText = target && target.closest('p, span, td, th, h1, h2, h3, h4, h5, h6, strong, b, em, label, code, pre, dt, dd, li');
-          // If clicking on text and not in Hand mode / not holding space: allow text selection
-          if (isText && !isPanMode && !isSpacePressed && e.button !== 1) {
-            return;
-          }
-
-          isDragging = true;
-          if (viewport) viewport.style.cursor = 'grabbing';
-          startX = e.clientX;
-          startY = e.clientY;
-          startScrollLeft = viewport ? viewport.scrollLeft : 0;
-          startScrollY = window.scrollY || window.pageYOffset || 0;
-        });
-
-        window.addEventListener('mousemove', function(e) {
-          if (!isDragging) return;
-          const dx = e.clientX - startX;
-          const dy = e.clientY - startY;
-
-          // Only prevent default if movement is actually happening
-          if (Math.hypot(dx, dy) > 2) {
-            e.preventDefault();
-            if (viewport) {
-              viewport.scrollLeft = startScrollLeft - dx;
-            }
-            window.scrollTo({
-              top: Math.max(0, startScrollY - dy),
-              behavior: 'auto'
-            });
-          }
-        }, { passive: false });
-
-        window.addEventListener('mouseup', function() {
-          if (isDragging) {
-            isDragging = false;
-            if (viewport) viewport.style.cursor = isPanMode ? 'grab' : 'default';
-          }
-        });
-
         // Initial boot
         applyZoom(currentZoom);
+      };
+    })();
       };
     })();
   `;
@@ -707,9 +614,19 @@ export function generateStandaloneInteractiveHTML(options: HTMLGeneratorOptions)
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Levi's Customer Service Executive WBR — ${startDate} to ${endDate}</title>
   <meta name="description" content="Customer Service Weekly Business Review (WBR) Interactive Dashboard for Levi's South Africa (${startDate} to ${endDate}). Hosted in Google Cloud Storage.">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <link rel="icon" type="image/svg+xml" href="https://storage.googleapis.com/ai-studio-bucket-275737853276-us-west1/Upload%20and%20report%20generation%20archive/Live/favicon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://storage.googleapis.com/ai-studio-bucket-275737853276-us-west1/Upload%20and%20report%20generation%20archive/Live/apple-touch-icon.png">
   <meta property="og:title" content="Levi's Customer Service Executive WBR — ${startDate} to ${endDate}">
   <meta property="og:description" content="Interactive 4-page Executive WBR Dashboard with Shopify, Euphoria, Freshdesk, ReturnGo, and ParcelNinja synthesis.">
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23C41230'/><text x='50' y='65' font-family='Arial, sans-serif' font-size='38' font-weight='900' fill='white' text-anchor='middle'>Levi's</text></svg>">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://storage.googleapis.com/ai-studio-bucket-275737853276-us-west1/Upload%20and%20report%20generation%20archive/Live/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://storage.googleapis.com/ai-studio-bucket-275737853276-us-west1/Upload%20and%20report%20generation%20archive/Live/og-image.png">
   <!-- Tailwind CSS CDN for pristine standalone utility styling -->
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
@@ -773,17 +690,12 @@ export function generateStandaloneInteractiveHTML(options: HTMLGeneratorOptions)
 
   <!-- ZOOM CONTROL -->
   <div id="standalone-zoom" class="no-print fixed bottom-4 right-4 z-50 flex items-center gap-2 bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-full border border-gray-300 shadow-xl">
-    <button id="btn-zoom-pan" class="p-1.5 rounded-full transition-colors flex items-center gap-1 cursor-pointer text-xs bg-gray-100 hover:bg-gray-200 text-gray-700" title="Text Selection active: Highlight text or drag margins. Click to switch to Hand Tool">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 3 7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="m13 13 6 6"/></svg>
-    </button>
-    <div class="h-4 w-px bg-gray-200"></div>
     <button id="btn-zoom-out" class="p-1 hover:bg-gray-100 rounded-full text-gray-700 cursor-pointer" title="Zoom out">&minus;</button>
     <input id="zoom-slider" type="range" min="0.5" max="1.6" step="0.05" value="${zoomLevel}" class="w-20 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#003876]" title="Adjust zoom" />
     <button id="btn-zoom-in" class="p-1 hover:bg-gray-100 rounded-full text-gray-700 cursor-pointer" title="Zoom in">&plus;</button>
     <button id="btn-zoom-toggle" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-gray-100 hover:bg-gray-200 text-gray-700 cursor-pointer" title="Toggle 135% zoom / Double-click open area">135%</button>
     <button id="btn-zoom-reset" class="p-1 hover:bg-gray-100 rounded-full text-gray-500 hover:text-gray-800 cursor-pointer" title="Reset to 100%">&#8634;</button>
     <span id="zoom-value" class="text-[10.5px] font-bold text-gray-800 min-w-8 text-center font-mono select-none">${Math.round(zoomLevel * 100)}%</span>
-    <span id="zoom-drag-hint" style="display: none;" class="text-[9px] text-[#003876] font-medium border-l border-gray-200 pl-1.5 select-none">Select text or drag margins</span>
   </div>
 
   <!-- MAIN CANVAS -->

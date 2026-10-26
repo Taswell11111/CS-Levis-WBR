@@ -21,11 +21,21 @@ import {
   BarChart3,
   Sparkles,
   Download,
-  X
+  X,
+  Layers,
+  CheckSquare,
+  Square,
+  History,
+  PlusCircle,
+  FileStack,
+  Eye,
+  ArrowLeftRight
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { WeeklyReportItem, WBRData } from '../types';
 import { CatalogModal } from './CatalogModal';
+import { CombinedLeadershipReviewModal } from './CombinedLeadershipReviewModal';
+import { VersionComparisonModal } from './VersionComparisonModal';
 import { HISTORICAL_WEEKLY_REPORTS, getHistoricalReportById } from '../data/historicalReportsData';
 import { kpiCardVariants, kpiContainerVariants } from '../utils/motionVariants';
 
@@ -47,13 +57,22 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
   currentEndDate
 }) => {
   const [reports, setReports] = useState<WeeklyReportItem[]>(HISTORICAL_WEEKLY_REPORTS);
-  const [selectedReportId, setSelectedReportId] = useState<string>(HISTORICAL_WEEKLY_REPORTS[0]?.id || 'week-38-2026');
+  const [selectedReportId, setSelectedReportId] = useState<string>(HISTORICAL_WEEKLY_REPORTS[0]?.id || 'week-41-2026-v2');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [searchFilter, setSearchFilter] = useState<string>('');
   const [dateSearch, setDateSearch] = useState<string>('');
   const [pickedDate, setPickedDate] = useState<string>('');
   const [evaluationModalReport, setEvaluationModalReport] = useState<WeeklyReportItem | null>(null);
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState<boolean>(false);
+  
+  // Multi-report selection state for combined leadership reviews
+  const [selectedReportIds, setSelectedReportIds] = useState<string[]>([]);
+  const [isCombinedModalOpen, setIsCombinedModalOpen] = useState<boolean>(false);
+  const [isCreatingVersion, setIsCreatingVersion] = useState<boolean>(false);
+  const [showVersionHistoryModal, setShowVersionHistoryModal] = useState<boolean>(false);
+  const [versionFeedbackMessage, setVersionFeedbackMessage] = useState<string>('');
+  const [isComparisonModalOpen, setIsComparisonModalOpen] = useState<boolean>(false);
+  const [comparisonBaseReportId, setComparisonBaseReportId] = useState<string>('');
 
   const enrichWithActiveData = (r: WeeklyReportItem): WeeklyReportItem => {
     if (r.status === 'ACTIVE_CHECKPOINT' && activeReportData) {
@@ -151,7 +170,101 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
   const fallbackLocalReports = () => {
     const merged = mergeWithHistorical(HISTORICAL_WEEKLY_REPORTS);
     setReports(merged);
-    setSelectedReportId(merged[0]?.id || 'week-38-2026');
+    setSelectedReportId(merged[0]?.id || 'week-41-2026-v2');
+  };
+
+  const toggleReportSelection = (reportId: string) => {
+    setSelectedReportIds(prev => 
+      prev.includes(reportId) ? prev.filter(id => id !== reportId) : [...prev, reportId]
+    );
+  };
+
+  const selectAllFiltered = () => {
+    setSelectedReportIds(filteredReports.map(r => r.id));
+  };
+
+  const clearSelection = () => {
+    setSelectedReportIds([]);
+  };
+
+  const selectMonth = (monthPattern: string) => {
+    const matching = reports.filter(r => r.startDate.includes(monthPattern) || r.endDate.includes(monthPattern));
+    setSelectedReportIds(matching.map(r => r.id));
+  };
+
+  const selectQuarter = (quarter: 'Q3' | 'Q4') => {
+    if (quarter === 'Q3') {
+      // Weeks 36-39 (September 2026)
+      const q3Reports = reports.filter(r => r.startDate >= '2026-09-01' && r.startDate <= '2026-09-30');
+      setSelectedReportIds(q3Reports.map(r => r.id));
+    } else {
+      // Weeks 40-41+ (October 2026)
+      const q4Reports = reports.filter(r => r.startDate >= '2026-10-01' && r.startDate <= '2026-10-31');
+      setSelectedReportIds(q4Reports.map(r => r.id));
+    }
+  };
+
+  const handleUpdateVersionPrefix = async (reportId: string, newPrefix: string) => {
+    const trimmed = newPrefix;
+    // Immediate optimistic local update
+    setReports(prev => prev.map(r => {
+      if (r.id === reportId) {
+        return {
+          ...r,
+          versionPrefix: trimmed,
+          versionLabel: trimmed
+        };
+      }
+      return r;
+    }));
+
+    // Asynchronous backend persistence
+    try {
+      await fetch('/api/reports/update-version-prefix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reportId, newPrefix: trimmed })
+      });
+    } catch (err) {
+      console.warn('Failed to persist version prefix update:', err);
+    }
+  };
+
+  const handleCreateNewVersion = async (baseReport: WeeklyReportItem) => {
+    setIsCreatingVersion(true);
+    setVersionFeedbackMessage('');
+    try {
+      const rawBaseId = baseReport.baseReportId || (baseReport.id ? baseReport.id.replace(/-v\d+$/, '') : `week-${baseReport.weekNumber}-2026`);
+      const res = await fetch('/api/reports/weekly', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...baseReport,
+          id: rawBaseId,
+          baseReportId: rawBaseId,
+          createNewVersion: true,
+          summaryNote: `Updated version snapshot for ${baseReport.weekLabel} created on ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}. Historical baseline preserved.`
+        })
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.reports && Array.isArray(json.reports)) {
+          const merged = mergeWithHistorical(json.reports);
+          setReports(merged);
+          if (json.report?.id) {
+            setSelectedReportId(json.report.id);
+          }
+          setVersionFeedbackMessage(`Successfully published new version ${json.createdVersion || ''}! Prior versions preserved.`);
+          setTimeout(() => setVersionFeedbackMessage(''), 4000);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to create new version snapshot:', err);
+      setVersionFeedbackMessage('Error creating version checkpoint.');
+    } finally {
+      setIsCreatingVersion(false);
+    }
   };
 
   const handleOpenReport = (report: WeeklyReportItem) => {
@@ -292,6 +405,11 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
                         : 'bg-gray-100 hover:bg-gray-200 text-gray-700 hover:text-gray-900 border border-gray-200'
                     }`}
                   >
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-black ${
+                      isSelected ? 'bg-white/20 text-white' : 'bg-blue-100 text-[#003876]'
+                    }`}>
+                      '{report.versionPrefix || 'v1'}'
+                    </span>
                     <span>{report.weekLabel}</span>
                     <span className={`text-[10px] font-normal ${isSelected ? 'text-blue-200' : 'text-gray-500'}`}>
                       ({report.periodLabel.split(' ')[0]} {report.periodLabel.split(' ')[1]} – {report.periodLabel.split(' – ')[1]?.split(' ')[0]} {report.periodLabel.split(' – ')[1]?.split(' ')[1]})
@@ -406,6 +524,17 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
               </button>
               <button
                 type="button"
+                onClick={() => { setDateSearch('2026-10'); setPickedDate(''); }}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
+                  dateSearch === '2026-10' || dateSearch.toLowerCase() === 'oct'
+                    ? 'bg-[#003876] text-white shadow-2xs' 
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200'
+                }`}
+              >
+                October 2026
+              </button>
+              <button
+                type="button"
                 onClick={() => { setDateSearch('2026-09'); setPickedDate(''); }}
                 className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
                   dateSearch === '2026-09' || dateSearch.toLowerCase() === 'sep'
@@ -414,17 +543,6 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
                 }`}
               >
                 September 2026
-              </button>
-              <button
-                type="button"
-                onClick={() => { setDateSearch('2026-08'); setPickedDate(''); }}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
-                  dateSearch === '2026-08' || dateSearch.toLowerCase() === 'aug'
-                    ? 'bg-[#003876] text-white shadow-2xs' 
-                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200'
-                }`}
-              >
-                August 2026
               </button>
             </div>
 
@@ -439,6 +557,103 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
                   className="text-[11px] font-bold text-[#C41230] hover:underline cursor-pointer"
                 >
                   Reset Filter
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* LEADERSHIP MULTI-REPORT REVIEW SELECTION BAR */}
+          <div className="mt-3 p-3 bg-blue-50/70 border border-blue-200 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-2xs">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <div className="flex items-center gap-1.5 text-xs font-black text-[#003876] uppercase tracking-wide">
+                <FileStack size={15} className="text-[#C41230]" />
+                <span>Leadership Multi-Report Review:</span>
+              </div>
+              <div className="flex items-center gap-1 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => selectMonth('2026-10')}
+                  className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-white hover:bg-blue-100 text-[#003876] border border-blue-300 transition-colors cursor-pointer shadow-2xs"
+                  title="Select all October 2026 weekly reports"
+                >
+                  Select Oct 2026 (Month)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => selectMonth('2026-09')}
+                  className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-white hover:bg-blue-100 text-[#003876] border border-blue-300 transition-colors cursor-pointer shadow-2xs"
+                  title="Select all September 2026 weekly reports"
+                >
+                  Select Sep 2026 (Month)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => selectQuarter('Q4')}
+                  className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-white hover:bg-blue-100 text-[#003876] border border-blue-300 transition-colors cursor-pointer shadow-2xs"
+                  title="Select Q4 2026 reports"
+                >
+                  Select Q4 2026
+                </button>
+                <button
+                  type="button"
+                  onClick={() => selectQuarter('Q3')}
+                  className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-white hover:bg-blue-100 text-[#003876] border border-blue-300 transition-colors cursor-pointer shadow-2xs"
+                  title="Select Q3 2026 reports"
+                >
+                  Select Q3 2026
+                </button>
+                <button
+                  type="button"
+                  onClick={selectAllFiltered}
+                  className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-white hover:bg-blue-100 text-gray-700 border border-gray-300 transition-colors cursor-pointer"
+                  title="Select all visible reports"
+                >
+                  Select All ({filteredReports.length})
+                </button>
+                {selectedReportIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearSelection}
+                    className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 transition-colors cursor-pointer"
+                    title="Clear current selection"
+                  >
+                    Clear ({selectedReportIds.length})
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  setComparisonBaseReportId(selectedReport?.baseReportId || selectedReport?.id || 'week-41-2026');
+                  setIsComparisonModalOpen(true);
+                }}
+                className="px-3 py-1 rounded-md bg-[#003876] hover:bg-[#002855] text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                title="Compare two versions (e.g., v1 vs v2) of the same report week side-by-side"
+              >
+                <ArrowLeftRight size={13} />
+                <span>Compare Versions (v1 vs v2)</span>
+              </button>
+
+              <span className={`text-xs font-mono font-bold px-2.5 py-1 rounded-md border ${
+                selectedReportIds.length > 0
+                  ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                  : 'bg-white text-gray-500 border-gray-200'
+              }`}>
+                {selectedReportIds.length} {selectedReportIds.length === 1 ? 'Report' : 'Reports'} Selected
+              </span>
+
+              {selectedReportIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsCombinedModalOpen(true)}
+                  className="px-3 py-1 rounded-md bg-[#C41230] hover:bg-[#a50f28] text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                  title="Preview combined report and generate single PDF"
+                >
+                  <Download size={12} />
+                  <span>Generate Combined PDF</span>
                 </button>
               )}
             </div>
@@ -467,9 +682,37 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
                     }`}
                   >
                     <div>
-                      {/* Top Bar: Week Badge & Status */}
+                      {/* Top Bar: Multi-Select Checkbox, Version Prefix, Week Badge & Status */}
                       <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-gray-100">
                         <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedReportIds.includes(report.id)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              toggleReportSelection(report.id);
+                            }}
+                            className="w-4 h-4 text-[#003876] rounded border-gray-300 focus:ring-[#003876] cursor-pointer"
+                            title={`Select '${report.versionPrefix || 'v1'}' ${report.weekLabel} for combined leadership review PDF`}
+                          />
+                          {/* Editable Version Prefix Text Input */}
+                          <div 
+                            className="inline-flex items-center gap-1 bg-white border border-blue-300 hover:border-[#003876] focus-within:border-[#003876] focus-within:ring-2 focus-within:ring-[#003876]/20 rounded-md px-1.5 py-0.5 shadow-2xs transition-all"
+                            onClick={(e) => e.stopPropagation()}
+                            title="Click to rename version prefix (e.g. v1, v2, v3) before combining/exporting"
+                          >
+                            <span className="text-[10px] font-bold text-gray-400 font-mono select-none">Ver:</span>
+                            <input
+                              type="text"
+                              value={report.versionPrefix || 'v1'}
+                              onChange={(e) => {
+                                handleUpdateVersionPrefix(report.id, e.target.value);
+                              }}
+                              className="w-9 text-[11px] font-black font-mono tracking-tight text-[#003876] bg-transparent outline-none border-0 p-0 text-center focus:bg-blue-50/50 rounded"
+                              placeholder="v1"
+                              aria-label={`Edit version prefix for ${report.weekLabel}`}
+                            />
+                          </div>
                           <span className={`px-2 py-0.5 rounded text-xs font-black font-mono tracking-tight ${
                             isSelected 
                               ? 'bg-[#003876] text-white' 
@@ -481,7 +724,14 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
                             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Active Checkpoint"></span>
                           )}
                         </div>
-                        {getStatusBadge(report.status)}
+                        <div className="flex items-center gap-1.5">
+                          {report.version && (
+                            <span className="text-[9px] font-mono text-gray-500 hidden sm:inline">
+                              {report.isLatestVersion ? 'Latest' : 'Archived'}
+                            </span>
+                          )}
+                          {getStatusBadge(report.status)}
+                        </div>
                       </div>
 
                       {/* Reporting Period */}
@@ -489,8 +739,11 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
                         <Calendar size={13} className="text-[#003876] shrink-0" />
                         <span className="truncate">{report.periodLabel}</span>
                       </div>
-                      <div className="text-[10px] text-gray-500 font-mono mt-0.5 pl-4.5">
-                        {report.startDate} &rarr; {report.endDate}
+                      <div className="text-[10px] text-gray-500 font-mono mt-0.5 pl-4.5 flex items-center justify-between">
+                        <span>{report.startDate} &rarr; {report.endDate}</span>
+                        <span className="text-[10px] text-indigo-700 font-bold bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200">
+                          '{report.versionPrefix || 'v1'}' Checkpoint
+                        </span>
                       </div>
 
                       {/* Mini Key Metrics Grid */}
@@ -521,25 +774,71 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
 
                     {/* Card Footer Actions */}
                     <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
-                      <span className={`text-[11px] font-bold flex items-center gap-1 transition-colors ${
-                        isSelected ? 'text-[#003876]' : 'text-gray-500 group-hover:text-[#003876]'
-                      }`}>
-                        <span>{isSelected ? 'Selected' : 'Select'}</span>
-                        <ChevronRight size={13} className="group-hover:translate-x-1 transition-transform" />
-                      </span>
-
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleOpenReport(report);
+                          toggleReportSelection(report.id);
                         }}
-                        className="px-2.5 py-1 rounded bg-[#C41230] hover:bg-[#a50f28] text-white text-[10.5px] font-bold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
-                        title="Open executive report"
+                        className={`text-[10.5px] font-bold flex items-center gap-1 transition-colors px-2 py-0.5 rounded cursor-pointer ${
+                          selectedReportIds.includes(report.id)
+                            ? 'bg-blue-100 text-[#003876] border border-blue-300'
+                            : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200'
+                        }`}
+                        title={`Toggle selection of '${report.versionPrefix || 'v1'}' ${report.weekLabel} for leadership combined review`}
                       >
-                        <span>Open WBR</span>
-                        <ExternalLink size={10} />
+                        {selectedReportIds.includes(report.id) ? (
+                          <>
+                            <CheckSquare size={12} className="text-[#003876]" />
+                            <span>'{report.versionPrefix || 'v1'}' Included</span>
+                          </>
+                        ) : (
+                          <>
+                            <Square size={12} className="text-gray-400" />
+                            <span>Select '{report.versionPrefix || 'v1'}'</span>
+                          </>
+                        )}
                       </button>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setComparisonBaseReportId(report.baseReportId || report.id);
+                            setIsComparisonModalOpen(true);
+                          }}
+                          className="text-[10px] font-bold px-2 py-1 rounded bg-indigo-50 hover:bg-indigo-100 text-[#003876] border border-indigo-200 flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
+                          title={`Compare versions of ${report.weekLabel} (v1 vs v2)`}
+                        >
+                          <ArrowLeftRight size={10} className="text-[#003876]" />
+                          <span>Compare</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedReportId(report.id);
+                          }}
+                          className={`text-[10px] font-bold px-2 py-1 rounded transition-colors cursor-pointer ${
+                            isSelected ? 'bg-gray-200 text-gray-800' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                          }`}
+                        >
+                          {isSelected ? 'Viewing' : 'Inspect'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenReport(report);
+                          }}
+                          className="px-2.5 py-1 rounded bg-[#C41230] hover:bg-[#a50f28] text-white text-[10.5px] font-bold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                          title="Open executive report"
+                        >
+                          <span>Open WBR</span>
+                          <ExternalLink size={10} />
+                        </button>
+                      </div>
                     </div>
                   </motion.div>
                 );
@@ -570,26 +869,76 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-gray-100">
                 <div className="space-y-1.5">
                   <div className="flex flex-wrap items-center gap-2.5">
+                    <span className="px-2.5 py-0.5 rounded bg-blue-100 text-[#003876] font-mono text-sm font-black border border-blue-300 shadow-2xs">
+                      '{selectedReport.versionPrefix || 'v1'}'
+                    </span>
                     <span className="text-xl sm:text-2xl font-black text-[#003876] tracking-tight">
-                      {selectedReport.weekLabel}
+                      '{selectedReport.versionPrefix || 'v1'}' {selectedReport.weekLabel}
                     </span>
                     <span className="text-gray-400 font-light">&bull;</span>
                     <span className="text-base sm:text-lg font-semibold text-gray-700">
                       Reporting Period: {selectedReport.periodLabel}
                     </span>
                     {getStatusBadge(selectedReport.status)}
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-700 border border-slate-300">
+                      {selectedReport.isLatestVersion ? 'Latest Version' : 'Historical Snapshot'}
+                    </span>
                   </div>
-                  <p className="text-xs text-gray-500 font-mono flex items-center gap-3">
-                    <span>Published: <strong>{new Date(selectedReport.publishedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</strong></span>
+                  <p className="text-xs text-gray-500 font-mono flex items-center gap-3 flex-wrap">
+                    <span>Version: <strong className="text-[#003876]">{selectedReport.versionLabel || 'v1'}</strong></span>
+                    <span>&bull;</span>
+                    <span>Published: <strong>{new Date(selectedReport.publishedAt || '').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</strong></span>
                     <span>&bull;</span>
                     <span>Sign-off: <strong className="text-gray-700">{selectedReport.signOffBy || 'Operations Lead'}</strong></span>
                   </p>
+                  {versionFeedbackMessage && (
+                    <div className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 inline-block animate-in fade-in">
+                      {versionFeedbackMessage}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
+                  {/* COMPARE VERSIONS BUTTON */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setComparisonBaseReportId(selectedReport.baseReportId || selectedReport.id);
+                      setIsComparisonModalOpen(true);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-[#003876] text-xs font-bold border border-blue-300 transition-colors cursor-pointer shadow-2xs"
+                    title="Compare two versions (e.g. v1 vs v2) of this report week with side-by-side metric comparison"
+                  >
+                    <ArrowLeftRight size={13} className="text-[#003876]" />
+                    <span>Compare Versions (v1 vs v2)</span>
+                  </button>
+
+                  {/* VERSION HISTORY TOGGLE */}
+                  <button
+                    type="button"
+                    onClick={() => setShowVersionHistoryModal(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-900 text-xs font-bold border border-indigo-200 transition-colors cursor-pointer shadow-2xs"
+                    title="View all versions and update history for this reporting period"
+                  >
+                    <History size={13} className="text-indigo-700" />
+                    <span>Version History</span>
+                  </button>
+
+                  {/* CREATE NEW VERSION SNAPSHOT (PREVENT OVERWRITING) */}
+                  <button
+                    type="button"
+                    onClick={() => handleCreateNewVersion(selectedReport)}
+                    disabled={isCreatingVersion}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-900 text-xs font-bold border border-emerald-300 transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
+                    title="Save current report data as a new version snapshot (e.g. v2 -> v3) preventing data overwrites"
+                  >
+                    <PlusCircle size={13} className="text-emerald-700" />
+                    <span>{isCreatingVersion ? 'Publishing...' : 'Save As New Version'}</span>
+                  </button>
+
                   <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-[#003876] text-xs font-bold border border-blue-200 transition-colors cursor-pointer shadow-2xs">
                     <Sparkles size={13} className="text-[#003876]" />
-                    <span>Upload Report Image</span>
+                    <span>Upload Image</span>
                     <input
                       type="file"
                       accept="image/*"
@@ -876,7 +1225,19 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
                           }`}
                         >
                           <td className="py-2.5 px-3 font-mono text-[#003876] font-bold">
-                            {r.weekLabel}
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={selectedReportIds.includes(r.id)}
+                                onChange={() => toggleReportSelection(r.id)}
+                                className="w-3.5 h-3.5 text-[#003876] rounded border-gray-300 focus:ring-[#003876] cursor-pointer"
+                                title="Select report for combined PDF review"
+                              />
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-black font-mono bg-blue-100 text-[#003876] border border-blue-200">
+                                '{r.versionPrefix || 'v1'}'
+                              </span>
+                              <span>{r.weekLabel}</span>
+                            </div>
                           </td>
                           <td className="py-2.5 px-3 text-gray-700 whitespace-nowrap">
                             {r.periodLabel}
@@ -941,7 +1302,7 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
                                     : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
                                 }`}
                               >
-                                Select
+                                Select '{r.versionPrefix || 'v1'}'
                               </button>
                               <button
                                 onClick={() => handleOpenReport(r)}
@@ -974,6 +1335,215 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
       <footer className="bg-white border-t border-gray-200 py-4 px-6 text-center text-[10px] text-gray-500 font-mono">
         Levi Strauss &amp; Co. &bull; DTC E-Commerce Weekly Business Review Telemetry Engine &bull; All 4 WBR Pages Verified
       </footer>
+
+      {/* STICKY BOTTOM LEADERSHIP REVIEW ACTION BAR */}
+      {selectedReportIds.length > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#003876] text-white border-t-2 border-[#C41230] shadow-2xl px-4 sm:px-8 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 animate-in slide-in-from-bottom duration-200">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-white/10 rounded-lg shrink-0">
+              <FileStack size={20} className="text-[#C41230]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-sm text-white">
+                  {selectedReportIds.length} Weekly {selectedReportIds.length === 1 ? 'Report' : 'Reports'} Selected
+                </span>
+                <span className="text-xs text-blue-200">
+                  &bull; Quarterly / Monthly Leadership Review Document
+                </span>
+              </div>
+              {/* SELECTED SPECIFIC REPORT VERSIONS CHIPS */}
+              <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                <span className="text-[10px] uppercase font-bold text-blue-300 tracking-wider">Included Versions:</span>
+                {selectedReportIds.map(id => {
+                  const rep = reports.find(r => r.id === id);
+                  if (!rep) return null;
+                  return (
+                    <span 
+                      key={id} 
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white/15 text-white text-[11px] font-mono border border-white/20"
+                    >
+                      <span className="font-black text-amber-300">'{rep.versionPrefix || 'v1'}'</span>
+                      <span>{rep.weekLabel}</span>
+                      <button 
+                        type="button" 
+                        onClick={() => toggleReportSelection(id)}
+                        className="hover:text-red-300 ml-1 cursor-pointer font-bold"
+                        title={`Remove '${rep.versionPrefix || 'v1'}' ${rep.weekLabel} from selection`}
+                      >
+                        &times;
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-colors cursor-pointer"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsCombinedModalOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-white hover:bg-blue-50 text-[#003876] text-xs font-bold transition-all cursor-pointer shadow-sm"
+            >
+              <Eye size={13} />
+              <span>Preview Review</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsCombinedModalOpen(true)}
+              className="flex items-center gap-2 px-5 py-1.5 rounded-lg bg-[#C41230] hover:bg-[#a50f28] text-white text-xs font-bold shadow-lg transition-all cursor-pointer hover:scale-[1.02]"
+              title="Generate single combined PDF document"
+            >
+              <Download size={13} />
+              <span>Generate Combined PDF ({selectedReportIds.length})</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* COMBINED LEADERSHIP REVIEW MODAL */}
+      {isCombinedModalOpen && (
+        <CombinedLeadershipReviewModal
+          isOpen={isCombinedModalOpen}
+          onClose={() => setIsCombinedModalOpen(false)}
+          selectedReports={reports.filter(r => selectedReportIds.includes(r.id))}
+        />
+      )}
+
+      {/* VERSION HISTORY MODAL */}
+      {showVersionHistoryModal && selectedReport && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-gray-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-[#003876] text-white px-5 py-4 flex items-center justify-between border-b border-blue-900">
+              <div className="flex items-center gap-2.5">
+                <History size={18} className="text-[#C41230]" />
+                <div>
+                  <h3 className="text-sm font-black text-white">
+                    Version History &bull; {selectedReport.weekLabel}
+                  </h3>
+                  <p className="text-xs text-blue-200 font-mono">
+                    {selectedReport.periodLabel}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowVersionHistoryModal(false)}
+                className="p-1 text-blue-200 hover:text-white rounded-md hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+              <div className="bg-blue-50/70 border border-blue-200 rounded-lg p-3 text-xs text-gray-700 leading-relaxed">
+                <span className="font-bold text-[#003876] block mb-0.5">Versioning &amp; Non-Overwriting Policy:</span>
+                Each update to a reporting period is stored as a distinct version (<code className="font-mono text-indigo-700 font-bold">v1</code>, <code className="font-mono text-indigo-700 font-bold">v2</code>, etc.). Past data and historical baselines are fully preserved to provide an uncompromised audit trail for quarterly reviews.
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="text-xs font-black uppercase tracking-wider text-gray-700">
+                  Available Version Checkpoints:
+                </h4>
+
+                {reports
+                  .filter(r => {
+                    const selBase = selectedReport.baseReportId || selectedReport.id.replace(/-v\d+$/, '');
+                    const rBase = r.baseReportId || r.id.replace(/-v\d+$/, '');
+                    return (selBase && selBase === rBase) || (r.startDate === selectedReport.startDate && r.endDate === selectedReport.endDate);
+                  })
+                  .sort((a, b) => (b.version || 1) - (a.version || 1))
+                  .map(verReport => {
+                    const isViewing = verReport.id === selectedReport.id;
+                    return (
+                      <div 
+                        key={verReport.id}
+                        className={`p-4 rounded-xl border transition-all ${
+                          isViewing
+                            ? 'bg-blue-50/60 border-[#003876] ring-1 ring-[#003876]/20'
+                            : 'bg-white border-gray-200 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded text-xs font-black font-mono bg-blue-100 text-[#003876] border border-blue-300">
+                              {verReport.versionPrefix || 'v1'}
+                            </span>
+                            <span className="text-xs font-bold text-gray-900">
+                              {verReport.weekLabel} (Version {verReport.versionLabel || 'v1'})
+                            </span>
+                            {verReport.isLatestVersion && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                Latest Active
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {isViewing ? (
+                              <span className="text-xs font-bold text-[#003876]">Currently Viewing</span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedReportId(verReport.id);
+                                  setShowVersionHistoryModal(false);
+                                }}
+                                className="px-3 py-1 bg-[#003876] hover:bg-[#002855] text-white rounded-md text-xs font-bold transition-colors cursor-pointer shadow-2xs"
+                              >
+                                View Version
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-gray-600 leading-relaxed font-sans">
+                          {verReport.summaryNote}
+                        </p>
+
+                        <div className="mt-3 pt-2 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-500 font-mono">
+                          <span>Published: {new Date(verReport.publishedAt || '').toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                          <span>Sign-off: <strong className="text-gray-700">{verReport.signOffBy || 'Operations Lead'}</strong></span>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+
+            <div className="bg-gray-50 px-5 py-3 border-t border-gray-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowVersionHistoryModal(false)}
+                className="px-4 py-1.5 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs font-bold transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VERSION COMPARISON MODAL */}
+      {isComparisonModalOpen && (
+        <VersionComparisonModal
+          isOpen={isComparisonModalOpen}
+          onClose={() => setIsComparisonModalOpen(false)}
+          reports={reports}
+          initialReportId={comparisonBaseReportId || selectedReport?.id}
+          onSelectForCombinedPDF={(reportIds) => {
+            setSelectedReportIds(prev => Array.from(new Set([...prev, ...reportIds])));
+          }}
+        />
+      )}
 
       {/* EVALUATION CATALOGUE MODAL */}
       {isCatalogModalOpen && evaluationModalReport && (

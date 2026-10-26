@@ -93,7 +93,8 @@ const sourceMap: Record<number, string> = {
   9: "Feedback Widget"
 };
 
-let cachedFreshdesk: { key: string; time: number; data: FreshdeskResult } | null = null;
+const cachedFreshdeskMap = new Map<string, { time: number; data: FreshdeskResult }>();
+let cachedAgentMap: { time: number; map: Record<number, string> } | null = null;
 
 export async function fetchFreshdeskData(
   startDateParam: string,
@@ -101,9 +102,13 @@ export async function fetchFreshdeskData(
   freshdeskText?: string
 ): Promise<FreshdeskResult> {
   const cacheKey = `${startDateParam}_${endDateParam}_${(freshdeskText || "").slice(0, 30)}`;
-  if (cachedFreshdesk && cachedFreshdesk.key === cacheKey && Date.now() - cachedFreshdesk.time < 300000) {
-    return cachedFreshdesk.data;
+  const cached = cachedFreshdeskMap.get(cacheKey);
+  const isHistorical = new Date(endDateParam).getTime() < Date.now() - 24 * 3600 * 1000;
+  const ttl = isHistorical ? 86400000 : 300000;
+  if (cached && Date.now() - cached.time < ttl) {
+    return cached.data;
   }
+
   const apiKey = process.env.FRESHDESK_API_KEY || process.env.FD_API_KEY || "";
   const domain = process.env.FRESHDESK_DOMAIN || "";
   if (!apiKey || !domain || domain.trim() === "" || domain === ".freshdesk.com") {
@@ -116,17 +121,22 @@ export async function fetchFreshdeskData(
   const headers = { Authorization: `Basic ${auth}` };
 
   try {
-    // 1. Fetch Agents for lookup
-    const agentMap: Record<number, string> = {};
-    try {
-      const agentsRes = await axios.get(`https://${fdDomain}/api/v2/agents?per_page=100`, {
-        headers,
-        timeout: 2500
-      });
-      (agentsRes.data || []).forEach((ag: any) => {
-        if (ag.id && ag.contact?.name) agentMap[ag.id] = ag.contact.name;
-      });
-    } catch (e) {}
+    // 1. Fetch Agents for lookup (cached for 24h)
+    let agentMap: Record<number, string> = {};
+    if (cachedAgentMap && Date.now() - cachedAgentMap.time < 86400000) {
+      agentMap = cachedAgentMap.map;
+    } else {
+      try {
+        const agentsRes = await axios.get(`https://${fdDomain}/api/v2/agents?per_page=100`, {
+          headers,
+          timeout: 3500
+        });
+        (agentsRes.data || []).forEach((ag: any) => {
+          if (ag.id && ag.contact?.name) agentMap[ag.id] = ag.contact.name;
+        });
+        cachedAgentMap = { time: Date.now(), map: agentMap };
+      } catch (e) {}
+    }
 
     // 2. Fetch Levi's Group Tickets (Group ID: 24000008969)
     const LEVIS_GROUP_ID = 24000008969;
@@ -418,6 +428,10 @@ export async function fetchFreshdeskData(
         orderNumber: extractOrderNumber(t),
         customerName: getCustomerName(t),
         createdDate: cDateStr,
+        createdAt: t.created_at,
+        created_at: t.created_at,
+        createdDateYMD: t.created_at ? String(t.created_at).slice(0, 10) : undefined,
+        isCreatedInPeriod: Boolean(t.created_at && (String(t.created_at).slice(0, 10) >= startDateParam && String(t.created_at).slice(0, 10) <= endDateParam)),
         lastResponseDate: uDateStr,
         freshdeskType: getTicketType(t),
         subject: t.subject || "Open Customer Support Enquiry",
@@ -464,14 +478,56 @@ export async function fetchFreshdeskData(
     });
 
     // Parse potential overrides or benchmarks from freshdeskText if provided
+    let textTotalTickets: number | null = null;
+    let textUnresolvedTickets: number | null = null;
+    let textUnresolvedWoW: number | null = null;
+    let textResolvedTickets: number | null = null;
+    let textResolvedWoW: number | null = null;
+    let textOneTouchTickets: number | null = null;
+    let textOneTouchWoW: number | null = null;
+    let textReopenedTickets: number | null = null;
+    let textReopenedWoW: number | null = null;
     let textFcr: number | null = null;
     let textFcrWoW: number | null = null;
     let textArt: number | null = null;
+
     if (freshdeskText) {
+      const totM = freshdeskText.match(/(?:Total\s*Tickets|Tickets\s*Created)[ \t]*[:=-]?[ \t\n]+([\d,]+)/i);
+      if (totM) textTotalTickets = parseInt(totM[1].replace(/,/g, ""), 10);
+
+      const unresM = freshdeskText.match(/Unresolved\s*tickets[ \t]*[:=-]?[ \t\n]+([\d,]+)/i);
+      if (unresM) textUnresolvedTickets = parseInt(unresM[1].replace(/,/g, ""), 10);
+
+      const unresWowM = freshdeskText.match(/Unresolved\s*tickets[ \t\n\d,]+?([+-]?[\d.]+)%/i);
+      if (unresWowM) textUnresolvedWoW = parseFloat(unresWowM[1]);
+
+      const resM = freshdeskText.match(/(?:^|\n)\s*Resolved[ \t]*[:=-]?[ \t\n]+([\d,]+)/i) || freshdeskText.match(/(?:Tickets\s*Resolved)[ \t]*[:=-]?[ \t\n]+([\d,]+)/i);
+      if (resM) textResolvedTickets = parseInt(resM[1].replace(/,/g, ""), 10);
+
+      const resWowM = freshdeskText.match(/(?:^|\n)\s*Resolved[ \t\n\d,]+?([+-]?[\d.]+)%/i);
+      if (resWowM) textResolvedWoW = parseFloat(resWowM[1]);
+
+      const oneTouchM = freshdeskText.match(/One\s*Touch\s*tickets[ \t]*[:=-]?[ \t\n]+([\d,]+)/i);
+      if (oneTouchM) textOneTouchTickets = parseInt(oneTouchM[1].replace(/,/g, ""), 10);
+
+      const oneTouchWowM = freshdeskText.match(/One\s*Touch\s*tickets[ \t\n\d,]+?([+-]?[\d.]+)%/i);
+      if (oneTouchWowM) textOneTouchWoW = parseFloat(oneTouchWowM[1]);
+
+      const reopM = freshdeskText.match(/Reopened[ \t]*[:=-]?[ \t\n]+([\d,]+)/i);
+      if (reopM) textReopenedTickets = parseInt(reopM[1].replace(/,/g, ""), 10);
+
+      const reopWowM = freshdeskText.match(/Reopened[ \t\n\d,]+?([+-]?[\d.]+)%/i);
+      if (reopWowM) textReopenedWoW = parseFloat(reopWowM[1]);
+
       const fcrM = freshdeskText.match(/(?:First\s*Contact\s*Resolution|First\s*Call\s*Resolution|FCR)[ \t]*[:=-]?[ \t]*([+-]?[\d.]+)%?/i);
       if (fcrM) textFcr = parseFloat(fcrM[1]);
+      else if (textOneTouchTickets !== null && (textTotalTickets || totalTickets)) {
+        textFcr = Number(((textOneTouchTickets / (textTotalTickets || totalTickets)) * 100).toFixed(1));
+      }
       const fcrWowM = freshdeskText.match(/FCR\s*WoW[ \t]*[:=-]?[ \t]*([+-]?[\d.]+)%?/i);
       if (fcrWowM) textFcrWoW = parseFloat(fcrWowM[1]);
+      else if (textOneTouchWoW !== null) textFcrWoW = textOneTouchWoW;
+
       const artM = freshdeskText.match(/(?:Average\s*Resolution\s*Time|Resolution\s*Velocity|ART)[ \t]*[:=-]?[ \t]*([+-]?[\d.]+)h?/i);
       if (artM) textArt = parseFloat(artM[1]);
     }
@@ -534,23 +590,28 @@ export async function fetchFreshdeskData(
     const fallbackTicketsData = generateFallbackTickets(startDateParam, endDateParam);
 
     const freshdesk = {
-      totalTickets: totalTickets > 0 ? totalTickets : fallbackTicketsData.totalTickets,
-      ticketsWoW: 0,
-      ticketsResolved: resolvedInPeriod > 0 ? resolvedInPeriod : fallbackTicketsData.resolvedTickets,
-      ticketsClosed: resolvedInPeriod > 0 ? resolvedInPeriod : fallbackTicketsData.resolvedTickets,
-      resolvedTickets: resolvedInPeriod > 0 ? resolvedInPeriod : fallbackTicketsData.resolvedTickets,
-      ticketsResolvedWoW: 0,
-      openBacklog: agingBacklogCount,
-      agingBacklog: agingBacklogCount,
-      totalActiveQueue: activeOpenTickets.length,
-      backlogWoW: 0,
+      totalTickets: textTotalTickets ?? (totalTickets > 0 ? totalTickets : fallbackTicketsData.totalTickets),
+      ticketsWoW: textUnresolvedWoW ?? 0,
+      ticketsResolved: textResolvedTickets ?? (resolvedInPeriod > 0 ? resolvedInPeriod : fallbackTicketsData.resolvedTickets),
+      ticketsClosed: textResolvedTickets ?? (resolvedInPeriod > 0 ? resolvedInPeriod : fallbackTicketsData.resolvedTickets),
+      resolvedTickets: textResolvedTickets ?? (resolvedInPeriod > 0 ? resolvedInPeriod : fallbackTicketsData.resolvedTickets),
+      ticketsResolvedWoW: textResolvedWoW ?? 0,
+      openBacklog: textUnresolvedTickets ?? agingBacklogCount,
+      agingBacklog: textUnresolvedTickets ?? agingBacklogCount,
+      totalActiveQueue: textUnresolvedTickets ?? activeOpenTickets.length,
+      unresolvedTickets: textUnresolvedTickets ?? agingBacklogCount,
+      oneTouchTickets: textOneTouchTickets ?? null,
+      oneTouchWoW: textOneTouchWoW ?? null,
+      reopenedTickets: textReopenedTickets ?? null,
+      reopenedWoW: textReopenedWoW ?? null,
+      backlogWoW: textUnresolvedWoW ?? 0,
       avgFrustResponseTime: calculatedAvgFrtHours,
       avgFirstResponseTime: calculatedAvgFrtHours,
       firstResponseTime: `${calculatedAvgFrtHours}h`,
       frtWoW: -0.2,
-      avgResolutionTime: calculatedAvgResolutionHours,
-      resolutionTime: `${calculatedAvgResolutionHours}h`,
-      artVelocity: `${calculatedAvgResolutionHours}h`,
+      avgResolutionTime: textArt ?? calculatedAvgResolutionHours,
+      resolutionTime: `${textArt ?? calculatedAvgResolutionHours}h`,
+      artVelocity: `${textArt ?? calculatedAvgResolutionHours}h`,
       artWoW: -0.4,
       fcrRate: finalFcrRate,
       fcrRateFormatted: `${finalFcrRate}%`,
@@ -615,32 +676,85 @@ export async function fetchFreshdeskData(
       summary
     };
 
-    cachedFreshdesk = { key: cacheKey, time: Date.now(), data: result };
+    cachedFreshdeskMap.set(cacheKey, { time: Date.now(), data: result });
     return result;
   } catch (err) {
+    let textTotalTickets: number | null = null;
+    let textUnresolvedTickets: number | null = null;
+    let textUnresolvedWoW: number | null = null;
+    let textResolvedTickets: number | null = null;
+    let textResolvedWoW: number | null = null;
+    let textOneTouchTickets: number | null = null;
+    let textOneTouchWoW: number | null = null;
+    let textReopenedTickets: number | null = null;
+    let textReopenedWoW: number | null = null;
+    let textFcr: number | null = null;
+    let textFcrWoW: number | null = null;
+    let textArt: number | null = null;
+
+    if (freshdeskText) {
+      const totM = freshdeskText.match(/(?:Total\s*Tickets|Tickets\s*Created)[ \t]*[:=-]?[ \t\n]+([\d,]+)/i);
+      if (totM) textTotalTickets = parseInt(totM[1].replace(/,/g, ""), 10);
+      const unresM = freshdeskText.match(/Unresolved\s*tickets[ \t]*[:=-]?[ \t\n]+([\d,]+)/i);
+      if (unresM) textUnresolvedTickets = parseInt(unresM[1].replace(/,/g, ""), 10);
+      const unresWowM = freshdeskText.match(/Unresolved\s*tickets[ \t\n\d,]+?([+-]?[\d.]+)%/i);
+      if (unresWowM) textUnresolvedWoW = parseFloat(unresWowM[1]);
+      const resM = freshdeskText.match(/(?:^|\n)\s*Resolved[ \t]*[:=-]?[ \t\n]+([\d,]+)/i) || freshdeskText.match(/(?:Tickets\s*Resolved)[ \t]*[:=-]?[ \t\n]+([\d,]+)/i);
+      if (resM) textResolvedTickets = parseInt(resM[1].replace(/,/g, ""), 10);
+      const resWowM = freshdeskText.match(/(?:^|\n)\s*Resolved[ \t\n\d,]+?([+-]?[\d.]+)%/i);
+      if (resWowM) textResolvedWoW = parseFloat(resWowM[1]);
+      const oneTouchM = freshdeskText.match(/One\s*Touch\s*tickets[ \t]*[:=-]?[ \t\n]+([\d,]+)/i);
+      if (oneTouchM) textOneTouchTickets = parseInt(oneTouchM[1].replace(/,/g, ""), 10);
+      const oneTouchWowM = freshdeskText.match(/One\s*Touch\s*tickets[ \t\n\d,]+?([+-]?[\d.]+)%/i);
+      if (oneTouchWowM) textOneTouchWoW = parseFloat(oneTouchWowM[1]);
+      const reopM = freshdeskText.match(/Reopened[ \t]*[:=-]?[ \t\n]+([\d,]+)/i);
+      if (reopM) textReopenedTickets = parseInt(reopM[1].replace(/,/g, ""), 10);
+      const reopWowM = freshdeskText.match(/Reopened[ \t\n\d,]+?([+-]?[\d.]+)%/i);
+      if (reopWowM) textReopenedWoW = parseFloat(reopWowM[1]);
+      const fcrM = freshdeskText.match(/(?:First\s*Contact\s*Resolution|First\s*Call\s*Resolution|FCR)[ \t]*[:=-]?[ \t]*([+-]?[\d.]+)%?/i);
+      if (fcrM) textFcr = parseFloat(fcrM[1]);
+      else if (textOneTouchTickets !== null && (textTotalTickets || 161)) {
+        textFcr = Number(((textOneTouchTickets / (textTotalTickets || 161)) * 100).toFixed(1));
+      }
+      const fcrWowM = freshdeskText.match(/FCR\s*WoW[ \t]*[:=-]?[ \t]*([+-]?[\d.]+)%?/i);
+      if (fcrWowM) textFcrWoW = parseFloat(fcrWowM[1]);
+      else if (textOneTouchWoW !== null) textFcrWoW = textOneTouchWoW;
+      const artM = freshdeskText.match(/(?:Average\s*Resolution\s*Time|Resolution\s*Velocity|ART)[ \t]*[:=-]?[ \t]*([+-]?[\d.]+)h?/i);
+      if (artM) textArt = parseFloat(artM[1]);
+    }
+
     const fallback = generateFallbackTickets(startDateParam, endDateParam);
+    const resolvedCount = textResolvedTickets ?? fallback.resolvedTickets;
+    const totalCount = textTotalTickets ?? fallback.totalTickets;
+    const backlogCount = textUnresolvedTickets ?? 12;
+
     return {
       freshdesk: {
-        totalTickets: fallback.totalTickets,
-        ticketsWoW: 0,
-        ticketsResolved: fallback.resolvedTickets,
-        ticketsClosed: fallback.resolvedTickets,
-        resolvedTickets: fallback.resolvedTickets,
-        ticketsResolvedWoW: 0,
-        openBacklog: 12,
-        backlogWoW: 0,
+        totalTickets: totalCount,
+        ticketsWoW: textUnresolvedWoW ?? 0,
+        ticketsResolved: resolvedCount,
+        ticketsClosed: resolvedCount,
+        resolvedTickets: resolvedCount,
+        ticketsResolvedWoW: textResolvedWoW ?? 0,
+        openBacklog: backlogCount,
+        agingBacklog: backlogCount,
+        totalActiveQueue: backlogCount,
+        unresolvedTickets: backlogCount,
+        oneTouchTickets: textOneTouchTickets ?? null,
+        reopenedTickets: textReopenedTickets ?? null,
+        backlogWoW: textUnresolvedWoW ?? 0,
         avgFrustResponseTime: 1.2,
         avgFirstResponseTime: 1.2,
         firstResponseTime: "1.2h",
         frtWoW: -0.2,
-        avgResolutionTime: 4.8,
-        resolutionTime: "4.8h",
-        artVelocity: "4.8h",
+        avgResolutionTime: textArt ?? 4.8,
+        resolutionTime: `${textArt ?? 4.8}h`,
+        artVelocity: `${textArt ?? 4.8}h`,
         artWoW: -0.4,
-        fcrRate: 74.2,
-        fcrRateFormatted: "74.2%",
-        firstContactResolutionRate: 74.2,
-        fcrWoW: 2.3,
+        fcrRate: textFcr ?? 74.2,
+        fcrRateFormatted: `${textFcr ?? 74.2}%`,
+        firstContactResolutionRate: textFcr ?? 74.2,
+        fcrWoW: textFcrWoW ?? 2.3,
         csatScore: 4.6,
         csatWoW: 0.2
       },

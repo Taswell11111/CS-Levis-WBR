@@ -4,15 +4,11 @@ import { Minus, Plus, RotateCcw, Hand, MousePointer } from 'lucide-react';
 interface ZoomControlProps {
   zoom: number;
   onZoomChange: (zoom: number) => void;
-  isPanMode?: boolean;
-  onTogglePanMode?: () => void;
 }
 
 export const ZoomControl: React.FC<ZoomControlProps> = ({ 
   zoom, 
-  onZoomChange,
-  isPanMode = false,
-  onTogglePanMode
+  onZoomChange
 }) => {
   const handleZoomIn = () => onZoomChange(Math.min(+(zoom + 0.1).toFixed(2), 1.6));
   const handleZoomOut = () => onZoomChange(Math.max(+(zoom - 0.1).toFixed(2), 0.5));
@@ -20,24 +16,7 @@ export const ZoomControl: React.FC<ZoomControlProps> = ({
   const handleReset = () => onZoomChange(1.0);
 
   return (
-    <div className="fixed bottom-3 right-3 z-[9999] flex items-center gap-1 bg-white/60 backdrop-blur-md px-2 py-1 rounded-full shadow-sm border border-gray-200/80 print:hidden transition-all opacity-50 hover:opacity-100 scale-80 origin-bottom-right">
-      {/* Pan / Hand Mode vs Text Selection Mode Toggle */}
-      {onTogglePanMode && (
-        <>
-          <button
-            onClick={onTogglePanMode}
-            className={`p-1.5 rounded-full transition-colors flex items-center gap-1 cursor-pointer text-xs ${
-              isPanMode
-                ? 'bg-[#003876] text-white shadow-xs'
-                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-            }`}
-            title={isPanMode ? "Hand / Pan Tool active (Click anywhere to drag). Click to switch to Text Selection mode" : "Text Selection active (Highlight text or drag open areas). Click to switch to Hand tool"}
-          >
-            {isPanMode ? <Hand size={13} /> : <MousePointer size={13} />}
-          </button>
-          <div className="h-4 w-px bg-gray-200" />
-        </>
-      )}
+    <div className="fixed bottom-3 right-3 z-[9999] flex items-center gap-1 bg-white/70 backdrop-blur-md px-2 py-1 rounded-full shadow-sm border border-gray-200/80 print:hidden transition-all opacity-60 hover:opacity-100 scale-85 origin-bottom-right">
 
       <div className="flex items-center gap-1">
         <button
@@ -102,7 +81,7 @@ export const ZoomControl: React.FC<ZoomControlProps> = ({
 
       {zoom > 1 && (
         <span className="text-[9px] text-[#003876] font-medium pl-1 border-l border-gray-200 hidden sm:inline select-none">
-          {isPanMode ? 'Drag to pan' : 'Select text or drag margins'}
+          Select text or drag margins
         </span>
       )}
     </div>

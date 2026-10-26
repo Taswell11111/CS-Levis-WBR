@@ -242,6 +242,9 @@ export interface ReturnGoData {
   returnsRequested?: number | null;
   returnsWoW: number | null;
   pendingRMAs?: number | null;
+  attentionRMAs?: number | null;
+  toSendRMAs?: number | null;
+  receivedToResolveRMAs?: number | null;
   returnsApproved?: number | null;
   returnsApprovedWoW?: number | null;
   returnsReceived: number | null;
@@ -297,7 +300,9 @@ export interface StatusAgingDay {
 }
 
 export interface ParcelNinjaData {
+  totalOutbounds?: number;
   dailyDeliveryData?: any[];
+  priorNonDelivered?: any[];
   delivered?: number | null;
   deliverySuccess: number | null;
   inTransit: number | null;
@@ -698,4 +703,20 @@ export interface WeeklyReportItem {
   } | null;
   reportImageUrl?: string | null;
   data?: any;
+  version?: number;
+  versionLabel?: string; // "v1", "v2", "v3", etc.
+  versionPrefix?: string; // "v1", "v2", etc.
+  baseReportId?: string;
+  isLatestVersion?: boolean;
+  versionNotes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  versionHistory?: Array<{
+    version: number;
+    versionLabel: string;
+    publishedAt: string;
+    signOffBy?: string;
+    summaryNote?: string;
+    changesSummary?: string;
+  }>;
 }
