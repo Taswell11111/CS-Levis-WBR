@@ -322,6 +322,8 @@ export interface ParcelNinjaData {
   rootCauses?: { source: string; percent: number; color?: string }[];
   sameDayDispatchRate?: number | null;
   dispatchToDeliveryDays?: number | null;
+  picking?: number | null;
+  dispatched?: number | null;
   recentShipments?: {
     id: string | number;
     orderNumber: string;

@@ -53,3 +53,10 @@ export const getDatesFromWeek = (weekNumber: number, year: number = 2026): { sta
   };
 };
 
+export const formatDateSA = (dateStr: string): string => {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  return `${parts[2]}-${parts[1]}-${parts[0]}`;
+};
+

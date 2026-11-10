@@ -38,6 +38,7 @@ import { CombinedLeadershipReviewModal } from './CombinedLeadershipReviewModal';
 import { VersionComparisonModal } from './VersionComparisonModal';
 import { HISTORICAL_WEEKLY_REPORTS, getHistoricalReportById } from '../data/historicalReportsData';
 import { kpiCardVariants, kpiContainerVariants } from '../utils/motionVariants';
+import { formatDateSA } from '../utils/dateUtils';
 
 interface WeeklyReportsPageProps {
   onBackToHome: () => void;
@@ -877,7 +878,7 @@ export const WeeklyReportsPage: React.FC<WeeklyReportsPageProps> = ({
                     </span>
                     <span className="text-gray-400 font-light">&bull;</span>
                     <span className="text-base sm:text-lg font-semibold text-gray-700">
-                      Reporting Period: {selectedReport.periodLabel}
+                      Reporting Period: {formatDateSA(selectedReport.startDate)} to {formatDateSA(selectedReport.endDate)}
                     </span>
                     {getStatusBadge(selectedReport.status)}
                     <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-700 border border-slate-300">

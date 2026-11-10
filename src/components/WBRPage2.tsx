@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Headphones, 
@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { WBRData } from '../types';
 import { StrategicCommentarySection } from './StrategicCommentarySection';
+import { TabbedSection, Tab } from './TabbedSection';
 import { kpiCardVariants, kpiContainerVariants } from '../utils/motionVariants';
 import { getWeekNumber } from '../utils/dateUtils';
 
@@ -55,21 +56,49 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
 
   const freshdesk = data.freshdesk;
   const telephony = data.telephony;
-  // Core Active Open Tickets Dataset for Levi's Group (Active Unresolved Tickets with proper period mix)
-  const defaultActiveOpenTickets = [
-    { id: '#FD-89410', orderNumber: '#LSSA-10492', customerName: 'Sarah Jenkins', subject: 'Inbound Return RET-48201 status check & refund timeframe', freshdeskType: 'Returns & Exchanges', priority: 'High', status: 'In Progress', createdDate: '21-09 08:30', lastResponseDate: '22-09 11:15', ageDays: 1.2, actionRequired: 'QA inspection underway at DC' },
-    { id: '#FD-89412', orderNumber: '#LSSA-10495', customerName: 'David Botha', subject: 'Courier delivery delay enquiry - Waybill DPD-4109283', freshdeskType: 'WISMO / Delivery', priority: 'Urgent', status: 'Escalated', createdDate: '15-09 10:15', lastResponseDate: '22-09 14:00', ageDays: 7.1, actionRequired: 'DPD Durban linehaul tracer active' },
-    { id: '#FD-89415', orderNumber: '#LSSA-10501', customerName: 'Nandi Mthembu', subject: 'Size exchange size swap request for 501 Curve', freshdeskType: 'Returns & Exchanges', priority: 'Medium', status: 'Waiting on Customer', createdDate: '16-09 09:20', lastResponseDate: '22-09 16:45', ageDays: 6.2, actionRequired: 'Awaiting reverse pickup address confirmation' },
-    { id: '#FD-89418', orderNumber: '#LSSA-10512', customerName: 'Pieter van der Merwe', subject: 'Gated estate delivery access code confirmation', freshdeskType: 'WISMO / Delivery', priority: 'High', status: 'In Progress', createdDate: '18-09 11:40', lastResponseDate: '23-09 08:10', ageDays: 4.5, actionRequired: 'Courier driver reattempt booked' },
-    { id: '#FD-89422', orderNumber: '#LSSA-10518', customerName: 'Thabo Molefe', subject: 'Exchange variant availability enquiry - 501 Original', freshdeskType: 'Product Advice', priority: 'Medium', status: 'Open', createdDate: '22-09 14:05', lastResponseDate: '23-09 10:30', ageDays: 1.1, actionRequired: 'Inventory fit consultation in progress' },
-    { id: '#FD-89425', orderNumber: '#LSSA-10525', customerName: 'Claire Redford', subject: 'Postal code checkout mismatch address correction', freshdeskType: 'WISMO / Delivery', priority: 'Urgent', status: 'Escalated', createdDate: '10-09 16:50', lastResponseDate: '23-09 12:20', ageDays: 12.2, actionRequired: 'Address correction active on DPD portal' },
-    { id: '#FD-89430', orderNumber: '#LSSA-10530', customerName: 'Jason Smith', subject: 'RMA pickup driver booking confirmation RET-48220', freshdeskType: 'Returns & Exchanges', priority: 'Medium', status: 'In Progress', createdDate: '14-09 13:10', lastResponseDate: '22-09 17:00', ageDays: 8.9, actionRequired: 'Secondary pickup window confirmed' },
-    { id: '#FD-89435', orderNumber: '#LSSA-10538', customerName: 'Annelize du Plessis', subject: 'Transit tracking scan update request - Stellenbosch', freshdeskType: 'WISMO / Delivery', priority: 'Medium', status: 'Open', createdDate: '23-09 08:00', lastResponseDate: '23-09 14:15', ageDays: 0.9, actionRequired: 'Winelands depot dispatch scheduled' },
-    { id: '#FD-89440', orderNumber: '#LSSA-10542', customerName: 'Kagiso Mabena', subject: 'Quality defect return enquiry & photo verification', freshdeskType: 'Returns & Exchanges', priority: 'High', status: 'Waiting on Warehouse', createdDate: '12-09 07:45', lastResponseDate: '23-09 09:30', ageDays: 10.4, actionRequired: 'Transit manifest en route to DC' },
-    { id: '#FD-89445', orderNumber: '#LSSA-10550', customerName: 'Sipho Zulu', subject: 'Weather delay delivery reschedule notification', freshdeskType: 'WISMO / Delivery', priority: 'Medium', status: 'Waiting on Customer', createdDate: '19-09 12:30', lastResponseDate: '23-09 11:00', ageDays: 3.7, actionRequired: 'Weather delay reschedule notice sent' },
-    { id: '#FD-89450', orderNumber: '#LSSA-10558', customerName: 'Michelle Taylor', subject: 'RMA QA inspection result enquiry RET-48240', freshdeskType: 'Returns & Exchanges', priority: 'Medium', status: 'In Progress', createdDate: '22-09 09:15', lastResponseDate: '23-09 15:40', ageDays: 1.3, actionRequired: 'Inspection underway at DC' },
-    { id: '#FD-89455', orderNumber: '#LSSA-10562', customerName: 'Johan Venter', subject: 'Box damage inspection query at PE Hub', freshdeskType: 'WISMO / Delivery', priority: 'High', status: 'Reopened', createdDate: '11-09 11:20', lastResponseDate: '22-09 16:10', ageDays: 11.3, actionRequired: 'Contents repacked and verified at PE Hub' }
-  ];
+  // Core Active Open Tickets Dataset for Levi's Group (Synchronized with active reporting period)
+  const defaultActiveOpenTickets = useMemo(() => {
+    const start = new Date(startDate);
+    const validStart = !isNaN(start.getTime());
+
+    const baseTickets = [
+      { id: '#FD-89410', orderNumber: '#LSSA-10492', customerName: 'Sarah Jenkins', subject: 'Inbound Return RET-48201 status check & refund timeframe', freshdeskType: 'Returns & Exchanges', priority: 'High', status: 'In Progress', dayOffset: 0, ageDays: 1.2, actionRequired: 'QA inspection underway at DC' },
+      { id: '#FD-89412', orderNumber: '#LSSA-10495', customerName: 'David Botha', subject: 'Courier delivery delay enquiry - Waybill DPD-4109283', freshdeskType: 'WISMO / Delivery', priority: 'Urgent', status: 'Escalated', dayOffset: 1, ageDays: 7.1, actionRequired: 'DPD Durban linehaul tracer active' },
+      { id: '#FD-89415', orderNumber: '#LSSA-10501', customerName: 'Nandi Mthembu', subject: 'Size exchange size swap request for 501 Curve', freshdeskType: 'Returns & Exchanges', priority: 'Medium', status: 'Waiting on Customer', dayOffset: 2, ageDays: 6.2, actionRequired: 'Awaiting reverse pickup address confirmation' },
+      { id: '#FD-89418', orderNumber: '#LSSA-10512', customerName: 'Pieter van der Merwe', subject: 'Gated estate delivery access code confirmation', freshdeskType: 'WISMO / Delivery', priority: 'High', status: 'In Progress', dayOffset: 3, ageDays: 4.5, actionRequired: 'Courier driver reattempt booked' },
+      { id: '#FD-89422', orderNumber: '#LSSA-10518', customerName: 'Thabo Molefe', subject: 'Exchange variant availability enquiry - 501 Original', freshdeskType: 'Product Advice', priority: 'Medium', status: 'Open', dayOffset: 4, ageDays: 1.1, actionRequired: 'Inventory fit consultation in progress' },
+      { id: '#FD-89425', orderNumber: '#LSSA-10525', customerName: 'Claire Redford', subject: 'Postal code checkout mismatch address correction', freshdeskType: 'WISMO / Delivery', priority: 'Urgent', status: 'Escalated', dayOffset: 2, ageDays: 12.2, actionRequired: 'Address correction active on DPD portal' },
+      { id: '#FD-89430', orderNumber: '#LSSA-10530', customerName: 'Jason Smith', subject: 'RMA pickup driver booking confirmation RET-48220', freshdeskType: 'Returns & Exchanges', priority: 'Medium', status: 'In Progress', dayOffset: 3, ageDays: 8.9, actionRequired: 'Secondary pickup window confirmed' },
+      { id: '#FD-89435', orderNumber: '#LSSA-10538', customerName: 'Annelize du Plessis', subject: 'Transit tracking scan update request - Stellenbosch', freshdeskType: 'WISMO / Delivery', priority: 'Medium', status: 'Open', dayOffset: 5, ageDays: 0.9, actionRequired: 'Winelands depot dispatch scheduled' },
+      { id: '#FD-89440', orderNumber: '#LSSA-10542', customerName: 'Kagiso Mabena', subject: 'Quality defect return enquiry & photo verification', freshdeskType: 'Returns & Exchanges', priority: 'High', status: 'Waiting on Warehouse', dayOffset: 1, ageDays: 10.4, actionRequired: 'Transit manifest en route to DC' },
+      { id: '#FD-89445', orderNumber: '#LSSA-10550', customerName: 'Sipho Zulu', subject: 'Weather delay delivery reschedule notification', freshdeskType: 'WISMO / Delivery', priority: 'Medium', status: 'Waiting on Customer', dayOffset: 4, ageDays: 3.7, actionRequired: 'Weather delay reschedule notice sent' },
+      { id: '#FD-89450', orderNumber: '#LSSA-10558', customerName: 'Michelle Taylor', subject: 'RMA QA inspection result enquiry RET-48240', freshdeskType: 'Returns & Exchanges', priority: 'Medium', status: 'In Progress', dayOffset: 5, ageDays: 1.3, actionRequired: 'Inspection underway at DC' },
+      { id: '#FD-89455', orderNumber: '#LSSA-10562', customerName: 'Johan Venter', subject: 'Box damage inspection query at PE Hub', freshdeskType: 'WISMO / Delivery', priority: 'High', status: 'Reopened', dayOffset: 2, ageDays: 11.3, actionRequired: 'Contents repacked and verified at PE Hub' }
+    ];
+
+    return baseTickets.map(t => {
+      let createdDate = '—';
+      let lastResponseDate = '—';
+      if (validStart) {
+        const d1 = new Date(start);
+        d1.setDate(start.getDate() + (t.dayOffset % 7));
+        const dd1 = String(d1.getDate()).padStart(2, '0');
+        const mm1 = String(d1.getMonth() + 1).padStart(2, '0');
+        createdDate = `${dd1}-${mm1} 09:30`;
+
+        const d2 = new Date(d1);
+        d2.setDate(d1.getDate() + 1);
+        const dd2 = String(d2.getDate()).padStart(2, '0');
+        const mm2 = String(d2.getMonth() + 1).padStart(2, '0');
+        lastResponseDate = `${dd2}-${mm2} 14:15`;
+      }
+      return {
+        ...t,
+        createdDate,
+        lastResponseDate
+      };
+    });
+  }, [startDate]);
 
   const activeOpenTickets = (data.activeOpenTickets && data.activeOpenTickets.length > 0) 
     ? data.activeOpenTickets 
@@ -593,40 +622,22 @@ export const WBRPage2: React.FC<WBRPage2Props> = ({
             </div>
 
             {/* STATUS TAB FILTERS LISTED ABOVE TABLE HEADERS */}
-            <div className="flex items-center gap-1.5 flex-wrap pb-2.5 mb-2 border-b border-slate-100">
-              {[
-                { id: 'All', label: 'All Active Queue', count: activeOpenTickets.length },
-                { id: '2d+ Backlog', label: '2+ Days Stale Backlog', count: staleBacklogCount },
-                { id: 'In Progress', label: 'In Progress', count: activeOpenTickets.filter((t: any) => (t.status || '').toLowerCase() === 'in progress').length },
-                { id: 'Escalated', label: 'Escalated', count: activeOpenTickets.filter((t: any) => (t.status || '').toLowerCase() === 'escalated').length },
-                { id: 'Waiting on Customer', label: 'Waiting on Customer', count: activeOpenTickets.filter((t: any) => (t.status || '').toLowerCase().includes('waiting')).length },
-                { id: 'Open', label: 'Open Queue', count: activeOpenTickets.filter((t: any) => (t.status || '').toLowerCase() === 'open').length }
-              ].map((tab) => {
-                const isActive = selectedStatus === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedStatus(tab.id);
-                      setCurrentPage(1);
-                    }}
-                    className={`px-3 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                      isActive 
-                        ? 'bg-[#003876] text-white shadow-xs' 
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-blue-500/30/80'
-                    }`}
-                  >
-                    <span>{tab.label}</span>
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-black ${
-                      isActive ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600'
-                    }`}>
-                      {tab.count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+            <TabbedSection
+              tabs={[
+                { id: 'All', label: `All Active Queue (${activeOpenTickets.length})` },
+                { id: '2d+ Backlog', label: `2+ Days Stale Backlog (${staleBacklogCount})` },
+                { id: 'In Progress', label: `In Progress (${activeOpenTickets.filter((t: any) => (t.status || '').toLowerCase() === 'in progress').length})` },
+                { id: 'Escalated', label: `Escalated (${activeOpenTickets.filter((t: any) => (t.status || '').toLowerCase() === 'escalated').length})` },
+                { id: 'Waiting on Customer', label: `Waiting on Customer (${activeOpenTickets.filter((t: any) => (t.status || '').toLowerCase().includes('waiting')).length})` },
+                { id: 'Open', label: `Open Queue (${activeOpenTickets.filter((t: any) => (t.status || '').toLowerCase() === 'open').length})` }
+              ]}
+              activeTabId={selectedStatus}
+              onTabChange={(id) => {
+                setSelectedStatus(id);
+                setCurrentPage(1);
+              }}
+              tabClassName="px-3 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+            />
 
             {/* Ticket Table with Created Date & Last Response Date */}
             <div className="overflow-x-auto">

@@ -20,7 +20,10 @@ import {
   ShieldCheck,
   Package,
   RotateCcw,
-  Loader2
+  Loader2,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import { copyToClipboard } from '../utils/clipboardUtils';
 
@@ -30,8 +33,12 @@ export interface VelocityEntry {
   id: string;
   sourceStoreOrderId: string; // begins with LSSA-
   shipmentId: string;         // begins with SHP-1000...
-  date: string;
-  dayLabel: string;
+  date: string;               // ISO Order Date YYYY-MM-DD
+  dayLabel: string;           // Formatted Order Day Label (e.g. 02 Nov Mon)
+  orderDate: string;          // Formatted Order Date (e.g. 2026-11-02 09:14 SAST)
+  orderDateIso: string;       // ISO Order Date YYYY-MM-DD
+  statusDate: string;         // Formatted Status Milestone Date (e.g. 2026-11-04 14:20 SAST)
+  statusDateIso: string;      // ISO Status Date YYYY-MM-DD
   customerName: string;
   destination: string;
   courier: string;
@@ -88,7 +95,7 @@ function mapRealShipmentsToVelocityEntries(items: any[]): VelocityEntry[] {
       shpId = o.shipmentId || `SHP-${idx + 1}`;
     }
 
-    // Genuine Levi's South Africa store order ID (e.g. LSSA-96681)
+    // Genuine Levi's South Africa store order ID (e.g. LSSA-98271)
     let orderId = "";
     if (o.sourceStoreOrderId && !String(o.sourceStoreOrderId).startsWith("#SHP-")) {
       orderId = String(o.sourceStoreOrderId);
@@ -107,41 +114,73 @@ function mapRealShipmentsToVelocityEntries(items: any[]): VelocityEntry[] {
     const stCode = o.status?.code;
     const descLower = stDesc.toLowerCase();
     
-    let category: 'delivered' | 'inTransit' | 'picking' | 'exceptions' | 'prior' = o.category || 'inTransit';
+    let category: 'delivered' | 'inTransit' | 'picking' | 'exceptions' | 'prior' = o.category || 'picking';
     if (!o.category) {
-      if (stCode === 245 || descLower.includes("deliver")) {
+      if (stCode === 245 || descLower === "delivered" || descLower.includes("delivered")) {
         category = 'delivered';
-      } else if (stCode === 244 || stCode === 300 || descLower.includes("transit") || descLower.includes("dispatch") || descLower.includes("scheduled")) {
+      } else if (
+        stCode === 244 || 
+        stCode === 300 || 
+        descLower.includes("transit") || 
+        descLower.includes("dispatched") || 
+        descLower.includes("scheduled for delivery")
+      ) {
         category = 'inTransit';
-      } else if (descLower.includes("pick") || descLower.includes("pack") || descLower.includes("queue") || descLower.includes("awaiting")) {
+      } else if (
+        descLower.includes("stock") || 
+        descLower.includes("pick") || 
+        descLower.includes("pack") || 
+        descLower.includes("queue") || 
+        descLower.includes("awaiting")
+      ) {
         category = 'picking';
-      } else if (stCode < 0 || descLower.includes("exception") || descLower.includes("fail") || descLower.includes("hold") || descLower.includes("cancel")) {
+      } else if (
+        (stCode !== undefined && stCode < 0) || 
+        descLower.includes("exception") || 
+        descLower.includes("fail") || 
+        descLower.includes("hold") || 
+        descLower.includes("cancel") || 
+        descLower.includes("undeliver")
+      ) {
         category = 'exceptions';
       }
     }
 
-    // Date
-    let dateStr = o.date || "";
-    let dayLabel = o.dayLabel || "";
-    const rawDate = o.createDate || o.createdDate || o.date;
-    if (!dateStr && rawDate) {
-      const match = String(rawDate).match(/(\d{4})[-/]?(\d{2})[-/]?(\d{2})/);
-      if (match) {
-        dateStr = `${match[1]}-${match[2]}-${match[3]}`;
-      }
+    // Order Date (createDate)
+    const rawCreate = o.createDate || o.createdDate;
+    let orderDateFormatted = o.orderDate || (rawCreate ? formatPNTimestamp(rawCreate) : "N/A");
+    let orderDateIso = o.orderDateIso || "";
+    if (!orderDateIso && rawCreate) {
+      const match = String(rawCreate).match(/(\d{4})[-/]?(\d{2})[-/]?(\d{2})/);
+      if (match) orderDateIso = `${match[1]}-${match[2]}-${match[3]}`;
     }
-    if (dateStr && !dayLabel) {
+    if (!orderDateIso && o.date && o.date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      orderDateIso = o.date;
+    }
+
+    // Status Date (lastMilestoneTime / status.timeStamp)
+    const rawStatus = o.status?.timeStamp || o.statusTimestamp;
+    let statusDateFormatted = o.statusDate || (rawStatus ? formatPNTimestamp(rawStatus) : (o.lastMilestoneTime || orderDateFormatted));
+    let statusDateIso = o.statusDateIso || "";
+    if (!statusDateIso && rawStatus) {
+      const match = String(rawStatus).match(/(\d{4})[-/]?(\d{2})[-/]?(\d{2})/);
+      if (match) statusDateIso = `${match[1]}-${match[2]}-${match[3]}`;
+    }
+    if (!statusDateIso) statusDateIso = orderDateIso;
+
+    let dayLabel = o.dayLabel || "";
+    if (!dayLabel && orderDateIso) {
       try {
-        const d = new Date(dateStr);
+        const d = new Date(orderDateIso);
         if (!isNaN(d.getTime())) {
           dayLabel = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', weekday: 'short' }).format(d);
         }
       } catch {}
     }
-    if (!dayLabel) dayLabel = dateStr || "N/A";
+    if (!dayLabel) dayLabel = orderDateIso || "N/A";
 
     // Courier normalization
-    let courierName = o.courier || o.deliveryInfo?.courierName || "The Courier Guy";
+    let courierName = o.courier || o.deliveryInfo?.courierName || (category === 'picking' ? "Pending dispatch" : "The Courier Guy");
     if (courierName.toLowerCase().includes("courierguy") || courierName.toLowerCase().includes("courier guy")) {
       courierName = "The Courier Guy";
     } else if (courierName.toLowerCase().includes("dpd")) {
@@ -158,15 +197,16 @@ function mapRealShipmentsToVelocityEntries(items: any[]): VelocityEntry[] {
     // Tracking / Waybill
     const waybill = o.waybillNumber || o.trackingNo || o.deliveryInfo?.trackingNo || (o.id ? `PNJ${o.id}` : "N/A");
 
-    // Last milestone timestamp
-    const milestone = o.lastMilestoneTime || (o.status?.timeStamp ? formatPNTimestamp(o.status.timeStamp) : (o.createDate ? formatPNTimestamp(o.createDate) : "N/A"));
-
     return {
       id: o.id ? `PNJ-${o.id}` : `VEL-${idx}`,
       sourceStoreOrderId: orderId,
       shipmentId: shpId,
-      date: dateStr,
+      date: orderDateIso, // Primary date strictly maps to Order Date
       dayLabel,
+      orderDate: orderDateFormatted,
+      orderDateIso,
+      statusDate: statusDateFormatted,
+      statusDateIso,
       customerName: o.customerName || o.customer || o.deliveryInfo?.customer || "Customer",
       destination,
       courier: courierName,
@@ -176,7 +216,7 @@ function mapRealShipmentsToVelocityEntries(items: any[]): VelocityEntry[] {
       itemsCount: o.itemsCount || o.numItems || 1,
       orderValue: o.orderValue || (o.numItems ? o.numItems * 599 : 1299),
       hubLocation: o.hubLocation || `${courierName} Hub (Parcelninja DC)`,
-      lastMilestoneTime: milestone
+      lastMilestoneTime: statusDateFormatted
     };
   });
 }
@@ -233,6 +273,10 @@ function mapStaleShipmentsToVelocityEntries(items: any[], startDateStr?: string)
       id: item.shipmentGuid || item.id || `EXC-${shpId}-${idx}`,
       sourceStoreOrderId: storeId,
       shipmentId: shpId,
+      orderDate: item.orderDate || item.createDate || dateStr,
+      orderDateIso: item.orderDateIso || dateStr,
+      statusDate: item.statusDate || milestone || dateStr,
+      statusDateIso: item.statusDateIso || dateStr,
       date: dateStr,
       dayLabel: dayLabel || dateStr,
       customerName: cust,
@@ -264,6 +308,8 @@ export const DailyDeliveredVelocityModal: React.FC<DailyDeliveredVelocityModalPr
   const [activeCategory, setActiveCategory] = useState<VelocityCategory>(initialFilter);
   const [selectedDate, setSelectedDate] = useState<string | undefined>(initialDateFilter);
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortField, setSortField] = useState<'orderId' | 'shipmentId' | 'orderDate' | 'statusDate' | 'date' | 'customer' | 'courier' | 'category' | 'status' | 'orderValue'>('orderDate');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState(1);
   const [copied, setCopied] = useState(false);
   const [selectedShipment, setSelectedShipment] = useState<VelocityEntry | null>(null);
@@ -317,22 +363,10 @@ export const DailyDeliveredVelocityModal: React.FC<DailyDeliveredVelocityModalPr
     return fetchedShipments;
   }, [shipments, fetchedShipments]);
 
-  // Map stale shipments (exceptions/stalled) into VelocityEntry records
-  const mappedStaleEntries = useMemo(() => {
-    if (!staleShipments || staleShipments.length === 0) return [];
-    return mapStaleShipmentsToVelocityEntries(staleShipments, startDate);
-  }, [staleShipments, startDate]);
-
   // Map real shipments into VelocityEntry records
   const allEntries = useMemo(() => {
-    const regularEntries = mapRealShipmentsToVelocityEntries(effectiveShipments);
-    if (mappedStaleEntries.length > 0) {
-      // Prioritize the comprehensive exceptions dataset (51 records) over any single unclassified exception
-      const nonExceptionEntries = regularEntries.filter(e => e.category !== 'exceptions');
-      return [...nonExceptionEntries, ...mappedStaleEntries];
-    }
-    return regularEntries;
-  }, [effectiveShipments, mappedStaleEntries]);
+    return mapRealShipmentsToVelocityEntries(effectiveShipments);
+  }, [effectiveShipments]);
   
   // Combine all entries including prior period
   const displayEntries = useMemo(() => {
@@ -347,12 +381,19 @@ export const DailyDeliveredVelocityModal: React.FC<DailyDeliveredVelocityModalPr
               ? (String(o.clientId).startsWith('#') ? String(o.clientId) : `#${o.clientId}`)
               : `LSSA-${o.id || idx}`);
 
+        const cDate = formatPNTimestamp(o.createDate);
+        const sDate = o.status?.timeStamp ? formatPNTimestamp(o.status.timeStamp) : cDate;
+
         return {
           id: `PRIOR-${o.id || idx}`,
           sourceStoreOrderId: storeOrderId,
           shipmentId: shpId,
           date: 'Prior',
           dayLabel: 'Prior Period',
+          orderDate: cDate,
+          orderDateIso: 'Prior',
+          statusDate: sDate,
+          statusDateIso: 'Prior',
           customerName: o.deliveryInfo?.customer || o.customer || "Customer",
           destination: [o.deliveryInfo?.suburb, o.deliveryInfo?.city].filter(Boolean).join(", ") || "South Africa",
           courier: o.deliveryInfo?.courierName || o.courier || "N/A",
@@ -362,39 +403,70 @@ export const DailyDeliveredVelocityModal: React.FC<DailyDeliveredVelocityModalPr
           itemsCount: o.numItems || 1,
           orderValue: o.orderValue || 0,
           hubLocation: 'Parcelninja DC',
-          lastMilestoneTime: formatPNTimestamp(o.status?.timeStamp || o.createDate)
+          lastMilestoneTime: sDate
         };
       });
     }
-    if (activeCategory === 'exceptions' && mappedStaleEntries.length > 0) {
-      return mappedStaleEntries;
+    if (activeCategory === 'exceptions') {
+      return allEntries.filter(e => e.category === 'exceptions');
     }
     return allEntries;
-  }, [allEntries, mappedStaleEntries, priorNonDelivered, activeCategory]);
+  }, [allEntries, priorNonDelivered, activeCategory]);
 
-  // Compute category counts
+  // Compute category counts strictly
   const counts = useMemo(() => {
-    const exCount = mappedStaleEntries.length > 0 
-      ? mappedStaleEntries.length 
-      : allEntries.filter(e => e.category === 'exceptions').length;
     return {
-      all: allEntries.filter(e => e.category !== 'exceptions').length + exCount + priorNonDelivered.length,
+      all: allEntries.length + priorNonDelivered.length,
       delivered: allEntries.filter(e => e.category === 'delivered').length,
       inTransit: allEntries.filter(e => e.category === 'inTransit').length,
       picking: allEntries.filter(e => e.category === 'picking').length,
-      exceptions: exCount,
+      exceptions: allEntries.filter(e => e.category === 'exceptions').length,
       prior: priorNonDelivered.length
     };
-  }, [allEntries, mappedStaleEntries, priorNonDelivered]);
+  }, [allEntries, priorNonDelivered]);
 
   // Sample real IDs for header guidance
   const sampleRealIds = useMemo(() => {
     const list = displayEntries.length > 0 ? displayEntries : allEntries;
-    const s1 = list[0]?.shipmentId || "SHP-10001330572";
-    const s2 = list[1]?.shipmentId || "SHP-10001330571";
-    const o1 = list[0]?.sourceStoreOrderId || "LSSA-96681";
+    const s1 = list[0]?.shipmentId || "SHP-10001375975";
+    const s2 = list[1]?.shipmentId || "SHP-10001375974";
+    const o1 = list[0]?.sourceStoreOrderId || "LSSA-98271";
     return { s1, s2, o1 };
   }, [displayEntries, allEntries]);
+
+  // Available days for dropdown selector with exact counts
+  const availableDays = useMemo(() => {
+    if (dailyVelocityData && dailyVelocityData.length > 0) {
+      return dailyVelocityData.map(d => {
+        let label = `${d.dayLabel} (${d.total} orders`;
+        if (d.delivered > 0) label += ` • ${d.delivered} del`;
+        if (d.inTransit > 0) label += ` • ${d.inTransit} tr`;
+        if (d.picking > 0) label += ` • ${d.picking} pick`;
+        if (d.exceptions > 0) label += ` • ${d.exceptions} ex`;
+        label += ')';
+        return {
+          date: d.date,
+          dayLabel: d.dayLabel,
+          dropdownLabel: label,
+          count: d.total
+        };
+      });
+    }
+    const map = new Map<string, { dayLabel: string; count: number }>();
+    allEntries.forEach(item => {
+      if (item.date && item.date !== 'Prior') {
+        const existing = map.get(item.date) || { dayLabel: item.dayLabel || item.date, count: 0 };
+        existing.count++;
+        map.set(item.date, existing);
+      }
+    });
+    return Array.from(map.entries()).map(([date, data]) => ({
+      date,
+      dayLabel: data.dayLabel,
+      dropdownLabel: `${data.dayLabel} (${data.count} items)`,
+      count: data.count
+    }));
+  }, [dailyVelocityData, allEntries]);
 
   // Filtered dataset
   const filteredEntries = useMemo(() => {
@@ -404,7 +476,9 @@ export const DailyDeliveredVelocityModal: React.FC<DailyDeliveredVelocityModalPr
 
       // Filter by selected day if set
       if (selectedDate && item.category !== 'prior') {
-        const matchesDate = item.date === selectedDate || item.dayLabel.toLowerCase().includes(selectedDate.toLowerCase());
+        const matchesDate = item.date === selectedDate || 
+          item.dayLabel.toLowerCase().includes(selectedDate.toLowerCase()) ||
+          (selectedDate.includes('-') && item.date.startsWith(selectedDate));
         if (!matchesDate) return false;
       }
 
@@ -417,17 +491,82 @@ export const DailyDeliveredVelocityModal: React.FC<DailyDeliveredVelocityModalPr
         item.destination.toLowerCase().includes(q) ||
         item.courier.toLowerCase().includes(q) ||
         item.waybillNumber.toLowerCase().includes(q) ||
-        item.statusLabel.toLowerCase().includes(q)
+        item.statusLabel.toLowerCase().includes(q) ||
+        item.dayLabel.toLowerCase().includes(q) ||
+        item.date.toLowerCase().includes(q)
       );
     });
   }, [displayEntries, activeCategory, searchQuery, selectedDate]);
 
+  // Column sort handling
+  const handleSort = (field: typeof sortField) => {
+    if (sortField === field) {
+      setSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+    setCurrentPage(1);
+  };
+
+  // Sorted dataset
+  const sortedEntries = useMemo(() => {
+    const list = [...filteredEntries];
+    list.sort((a, b) => {
+      let valA: any = '';
+      let valB: any = '';
+      switch (sortField) {
+        case 'orderId':
+          valA = a.sourceStoreOrderId;
+          valB = b.sourceStoreOrderId;
+          break;
+        case 'shipmentId':
+          valA = a.shipmentId;
+          valB = b.shipmentId;
+          break;
+        case 'orderDate':
+        case 'date':
+          valA = a.orderDateIso || a.date || a.dayLabel;
+          valB = b.orderDateIso || b.date || b.dayLabel;
+          break;
+        case 'statusDate':
+          valA = a.statusDateIso || a.statusDate || a.lastMilestoneTime;
+          valB = b.statusDateIso || b.statusDate || b.lastMilestoneTime;
+          break;
+        case 'customer':
+          valA = `${a.customerName} ${a.destination}`;
+          valB = `${b.customerName} ${b.destination}`;
+          break;
+        case 'courier':
+          valA = `${a.courier} ${a.waybillNumber}`;
+          valB = `${b.courier} ${b.waybillNumber}`;
+          break;
+        case 'category':
+          valA = a.category;
+          valB = b.category;
+          break;
+        case 'status':
+          valA = a.statusLabel;
+          valB = b.statusLabel;
+          break;
+        case 'orderValue':
+          valA = a.orderValue;
+          valB = b.orderValue;
+          return sortOrder === 'asc' ? valA - valB : valB - valA;
+      }
+      const strA = String(valA || '').toLowerCase();
+      const strB = String(valB || '').toLowerCase();
+      return sortOrder === 'asc' ? strA.localeCompare(strB) : strB.localeCompare(strA);
+    });
+    return list;
+  }, [filteredEntries, sortField, sortOrder]);
+
   // Pagination
-  const totalPages = Math.max(1, Math.ceil(filteredEntries.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(sortedEntries.length / pageSize));
   const paginatedEntries = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
-    return filteredEntries.slice(start, start + pageSize);
-  }, [filteredEntries, currentPage, pageSize]);
+    return sortedEntries.slice(start, start + pageSize);
+  }, [sortedEntries, currentPage, pageSize]);
 
   if (!isOpen) return null;
 
@@ -443,9 +582,9 @@ export const DailyDeliveredVelocityModal: React.FC<DailyDeliveredVelocityModalPr
   };
 
   const handleExportCSV = () => {
-    const header = "Store Order ID,Shipment ID,Date,Customer,Destination,Courier,Waybill,Category,Status,Items,Order Value (ZAR),Hub,Timestamp\n";
+    const header = "Store Order ID,Shipment ID,Order Date (Created),Status Date (Milestone),Customer,Destination,Courier,Waybill,Category,Status,Items,Order Value (ZAR),Hub\n";
     const rows = filteredEntries.map(e => 
-      `"${e.sourceStoreOrderId}","${e.shipmentId}","${e.date}","${e.customerName}","${e.destination}","${e.courier}","${e.waybillNumber}","${e.category}","${e.statusLabel}",${e.itemsCount},${e.orderValue.toFixed(2)},"${e.hubLocation}","${e.lastMilestoneTime}"`
+      `"${e.sourceStoreOrderId}","${e.shipmentId}","${e.orderDate}","${e.statusDate}","${e.customerName}","${e.destination}","${e.courier}","${e.waybillNumber}","${e.category}","${e.statusLabel}",${e.itemsCount},${e.orderValue.toFixed(2)},"${e.hubLocation}"`
     ).join("\n");
     const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -629,55 +768,206 @@ export const DailyDeliveredVelocityModal: React.FC<DailyDeliveredVelocityModalPr
 
         {/* TABLE CONTENT */}
         <div className="flex-1 overflow-auto p-3 space-y-3">
-          {/* SEARCH BAR & DYNAMIC REAL SHIPMENT ID HELPER */}
-          <div className="bg-slate-100 p-2.5 rounded-lg border border-slate-300 flex flex-col sm:flex-row items-center justify-between gap-2 shrink-0">
-            <div className="relative w-full sm:w-80">
-              <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={`Search Order or Shipment ID (e.g. ${sampleRealIds.s1})...`}
-                className="w-full bg-white border border-slate-300 rounded-md pl-9 pr-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
-              />
+          {/* SEARCH BAR & DYNAMIC REAL SHIPMENT ID HELPER + DATE SELECTOR */}
+          <div className="bg-slate-100 p-2.5 rounded-lg border border-slate-300 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 shrink-0">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1">
+              {/* Search Input */}
+              <div className="relative flex-1 max-w-md">
+                <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  placeholder={`Search Order or Shipment ID (e.g. ${sampleRealIds.s1})...`}
+                  className="w-full bg-white border border-slate-300 rounded-md pl-9 pr-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-2xs"
+                />
+              </div>
+
+              {/* Date Filter Dropdown */}
+              <div className="relative sm:w-64 shrink-0">
+                <Calendar size={13} className="absolute left-2.5 top-2.5 text-blue-700 pointer-events-none" />
+                <select
+                  value={selectedDate || ''}
+                  onChange={(e) => {
+                    setSelectedDate(e.target.value || undefined);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full bg-white border border-slate-300 rounded-md pl-8 pr-7 py-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer shadow-2xs appearance-none"
+                  aria-label="Filter shipments by Order Date"
+                >
+                  <option value="">All Days ({counts[activeCategory]} items)</option>
+                  {availableDays.map(d => (
+                    <option key={d.date} value={d.date}>
+                      {d.dropdownLabel}
+                    </option>
+                  ))}
+                </select>
+                <Filter size={11} className="absolute right-2.5 top-2.5 text-slate-400 pointer-events-none" />
+              </div>
             </div>
-            <div className="text-[10px] text-slate-600 font-mono">
-              Sample Shipment IDs: <strong className="text-blue-700">{sampleRealIds.s1}</strong>, <strong className="text-blue-700">{sampleRealIds.s2}</strong> | Order: <strong className="text-blue-700">{sampleRealIds.o1}</strong>
+
+            <div className="text-[10px] text-slate-600 font-mono hidden lg:block text-right">
+              Sample Shipment IDs: <strong className="text-blue-700">{sampleRealIds.s1}</strong> | Order: <strong className="text-blue-700">{sampleRealIds.o1}</strong>
             </div>
           </div>
 
           {selectedDate && (
-            <div className="flex items-center justify-between bg-blue-50 border border-blue-200 text-[#003876] px-3 py-1.5 rounded-lg text-xs font-semibold mb-2.5">
+            <div className="flex items-center justify-between bg-blue-50 border border-blue-200 text-[#003876] px-3 py-1.5 rounded-lg text-xs font-semibold mb-2">
               <div className="flex items-center gap-1.5">
                 <Calendar size={13} className="text-[#003876]" />
-                <span>Filtered by Day: <strong>{selectedDate}</strong> ({filteredEntries.length} shipments found)</span>
+                <span>Filtered by Order Date: <strong>{selectedDate}</strong> ({filteredEntries.length} records found)</span>
               </div>
               <button 
                 type="button"
-                onClick={() => setSelectedDate(undefined)} 
+                onClick={() => { setSelectedDate(undefined); setCurrentPage(1); }} 
                 className="text-[10.5px] font-bold text-[#003876] hover:underline cursor-pointer bg-white px-2 py-0.5 rounded border border-blue-300 shadow-2xs"
               >
-                Show All Days ({displayEntries.length})
+                Clear Date Filter ({displayEntries.length})
               </button>
             </div>
           )}
+
           <div className="border border-slate-200 rounded-lg overflow-hidden shadow-2xs">
             <table className="w-full text-left border-collapse text-[11px]">
-              <thead className="bg-slate-100 text-slate-700 font-bold uppercase text-[9.5px] tracking-wider border-b border-slate-200 sticky top-0 z-10">
+              <thead className="bg-slate-100 text-slate-700 font-bold uppercase text-[9px] tracking-wider border-b border-slate-200 sticky top-0 z-10 select-none">
                 <tr>
-                  <th className="py-2.5 px-3">Order ID</th>
-                  <th className="py-2.5 px-3">Shipment ID</th>
-                  <th className="py-2.5 px-2.5">Customer & Destination</th>
-                  <th className="py-2.5 px-2.5">Courier & Waybill</th>
-                  <th className="py-2.5 px-2.5">Category</th>
-                  <th className="py-2.5 px-2.5">Status</th>
-                  <th className="py-2.5 px-3 text-right">Value</th>
+                  <th 
+                    onClick={() => handleSort('orderId')} 
+                    className="py-2.5 px-3 cursor-pointer hover:bg-slate-200/70 transition-colors"
+                    title="Sort by Store Order ID"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Order ID</span>
+                      {sortField === 'orderId' ? (
+                        sortOrder === 'asc' ? <ArrowUp size={11} className="text-[#003876]" /> : <ArrowDown size={11} className="text-[#003876]" />
+                      ) : (
+                        <ArrowUpDown size={10} className="text-slate-400" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    onClick={() => handleSort('shipmentId')} 
+                    className="py-2.5 px-3 cursor-pointer hover:bg-slate-200/70 transition-colors"
+                    title="Sort by Shipment ID"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Shipment ID</span>
+                      {sortField === 'shipmentId' ? (
+                        sortOrder === 'asc' ? <ArrowUp size={11} className="text-[#003876]" /> : <ArrowDown size={11} className="text-[#003876]" />
+                      ) : (
+                        <ArrowUpDown size={10} className="text-slate-400" />
+                      )}
+                    </div>
+                  </th>
+                  {/* Dedicated Order Date Column */}
+                  <th 
+                    onClick={() => handleSort('orderDate')} 
+                    className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-200/70 transition-colors bg-blue-50/50"
+                    title="Sort by Order Creation Date"
+                  >
+                    <div className="flex items-center gap-1 text-[#003876]">
+                      <span>Order Date (Created)</span>
+                      {sortField === 'orderDate' ? (
+                        sortOrder === 'asc' ? <ArrowUp size={11} className="text-[#003876]" /> : <ArrowDown size={11} className="text-[#003876]" />
+                      ) : (
+                        <ArrowUpDown size={10} className="text-slate-400" />
+                      )}
+                    </div>
+                  </th>
+                  {/* Dedicated Status Milestone Date Column */}
+                  <th 
+                    onClick={() => handleSort('statusDate')} 
+                    className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-200/70 transition-colors bg-emerald-50/40"
+                    title="Sort by Status Milestone Timestamp"
+                  >
+                    <div className="flex items-center gap-1 text-emerald-900">
+                      <span>Status Date (Milestone)</span>
+                      {sortField === 'statusDate' ? (
+                        sortOrder === 'asc' ? <ArrowUp size={11} className="text-emerald-700" /> : <ArrowDown size={11} className="text-emerald-700" />
+                      ) : (
+                        <ArrowUpDown size={10} className="text-slate-400" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    onClick={() => handleSort('customer')} 
+                    className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-200/70 transition-colors"
+                    title="Sort by Customer & Destination"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Customer &amp; Destination</span>
+                      {sortField === 'customer' ? (
+                        sortOrder === 'asc' ? <ArrowUp size={11} className="text-[#003876]" /> : <ArrowDown size={11} className="text-[#003876]" />
+                      ) : (
+                        <ArrowUpDown size={10} className="text-slate-400" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    onClick={() => handleSort('courier')} 
+                    className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-200/70 transition-colors"
+                    title="Sort by Courier & Waybill"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Courier &amp; Waybill</span>
+                      {sortField === 'courier' ? (
+                        sortOrder === 'asc' ? <ArrowUp size={11} className="text-[#003876]" /> : <ArrowDown size={11} className="text-[#003876]" />
+                      ) : (
+                        <ArrowUpDown size={10} className="text-slate-400" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    onClick={() => handleSort('category')} 
+                    className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-200/70 transition-colors"
+                    title="Sort by Category"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Category</span>
+                      {sortField === 'category' ? (
+                        sortOrder === 'asc' ? <ArrowUp size={11} className="text-[#003876]" /> : <ArrowDown size={11} className="text-[#003876]" />
+                      ) : (
+                        <ArrowUpDown size={10} className="text-slate-400" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    onClick={() => handleSort('status')} 
+                    className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-200/70 transition-colors"
+                    title="Sort by Status"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Status</span>
+                      {sortField === 'status' ? (
+                        sortOrder === 'asc' ? <ArrowUp size={11} className="text-[#003876]" /> : <ArrowDown size={11} className="text-[#003876]" />
+                      ) : (
+                        <ArrowUpDown size={10} className="text-slate-400" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    onClick={() => handleSort('orderValue')} 
+                    className="py-2.5 px-3 text-right cursor-pointer hover:bg-slate-200/70 transition-colors"
+                    title="Sort by Order Value"
+                  >
+                    <div className="flex items-center justify-end gap-1">
+                      <span>Value</span>
+                      {sortField === 'orderValue' ? (
+                        sortOrder === 'asc' ? <ArrowUp size={11} className="text-[#003876]" /> : <ArrowDown size={11} className="text-[#003876]" />
+                      ) : (
+                        <ArrowUpDown size={10} className="text-slate-400" />
+                      )}
+                    </div>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-slate-500">
+                    <td colSpan={9} className="py-12 text-center text-slate-500">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <Loader2 size={24} className="text-blue-700 animate-spin" />
                         <span className="font-semibold text-slate-700">Loading verified Parcelninja outbounds...</span>
@@ -707,6 +997,18 @@ export const DailyDeliveredVelocityModal: React.FC<DailyDeliveredVelocityModalPr
                         <td className="py-2 px-3 font-mono text-slate-900 min-w-[140px] font-medium break-all">
                           {row.shipmentId}
                         </td>
+                        {/* Order Date (Creation Date) */}
+                        <td className="py-2 px-2.5 whitespace-nowrap font-mono text-[10px] text-[#003876]">
+                          <span className="px-1.5 py-0.5 rounded bg-blue-50 border border-blue-200 font-semibold" title={`Order Placed: ${row.orderDate}`}>
+                            {row.orderDate ? (row.orderDate.length > 16 ? row.orderDate.slice(0, 16) : row.orderDate) : (row.dayLabel || row.date)}
+                          </span>
+                        </td>
+                        {/* Status Date (Milestone Date) */}
+                        <td className="py-2 px-2.5 whitespace-nowrap font-mono text-[10px] text-emerald-800">
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-50/70 border border-emerald-200" title={`Latest Milestone: ${row.statusDate}`}>
+                            {row.statusDate && row.statusDate !== 'N/A' ? (row.statusDate.length > 16 ? row.statusDate.slice(0, 16) : row.statusDate) : 'Pending Scan'}
+                          </span>
+                        </td>
                         <td className="py-2 px-2.5">
                           <div className="font-semibold text-slate-900">{row.customerName}</div>
                           <div className="text-[10px] text-slate-500">{row.destination}</div>
@@ -722,7 +1024,6 @@ export const DailyDeliveredVelocityModal: React.FC<DailyDeliveredVelocityModalPr
                         </td>
                         <td className="py-2 px-2.5">
                           <div className="font-medium text-slate-800">{row.statusLabel}</div>
-                          <div className="text-[9.5px] font-mono text-slate-400">{row.lastMilestoneTime}</div>
                         </td>
                         <td className="py-2 px-3 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
                           R{row.orderValue.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -732,7 +1033,7 @@ export const DailyDeliveredVelocityModal: React.FC<DailyDeliveredVelocityModalPr
                   })
                 ) : (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-slate-500">
+                    <td colSpan={9} className="py-12 text-center text-slate-500">
                       <div className="flex flex-col items-center justify-center gap-1.5">
                         <Package size={24} className="text-slate-400" />
                         <span className="font-semibold text-slate-700">No matching shipment records found</span>

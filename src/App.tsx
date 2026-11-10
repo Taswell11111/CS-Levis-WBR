@@ -15,6 +15,7 @@ import {
   Calendar,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
   ChevronRight,
   FileText,
   Sparkles,
@@ -70,7 +71,19 @@ import { ZoomControl } from './components/ZoomControl';
 import { HighlightItem } from './components/KeyHighlightsOverlay';
 import { downloadWBRReportAsPDF } from './lib/pdfExport';
 import { generateStandaloneInteractiveHTML } from './utils/htmlExportGenerator';
+import { getCachedReport, setCachedReport } from './utils/reportCache';
 import { getWeekNumber, getDatesFromWeek } from './utils/dateUtils';
+
+export const AVAILABLE_COHORT_WEEKS = [
+  { week: 45, start: '2026-11-02', end: '2026-11-08', label: 'W45', dateLabel: '11-02', periodLabel: '02 Nov – 08 Nov' },
+  { week: 44, start: '2026-10-26', end: '2026-11-01', label: 'W44', dateLabel: '10-26', periodLabel: '26 Oct – 01 Nov' },
+  { week: 43, start: '2026-10-19', end: '2026-10-25', label: 'W43', dateLabel: '10-19', periodLabel: '19 Oct – 25 Oct' },
+  { week: 42, start: '2026-10-12', end: '2026-10-18', label: 'W42', dateLabel: '10-12', periodLabel: '12 Oct – 18 Oct' },
+  { week: 41, start: '2026-10-05', end: '2026-10-11', label: 'W41', dateLabel: '10-05', periodLabel: '05 Oct – 11 Oct' },
+  { week: 40, start: '2026-09-28', end: '2026-10-04', label: 'W40', dateLabel: '09-28', periodLabel: '28 Sep – 04 Oct' },
+  { week: 39, start: '2026-09-21', end: '2026-09-27', label: 'W39', dateLabel: '09-21', periodLabel: '21 Sep – 27 Sep' },
+  { week: 38, start: '2026-09-14', end: '2026-09-20', label: 'W38', dateLabel: '09-14', periodLabel: '14 Sep – 20 Sep' },
+];
 
 export default function App() {
   const [data, setData] = useState<WBRData | null>(null);
@@ -83,6 +96,31 @@ export default function App() {
   const [publishing, setPublishing] = useState(false);
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+
+  // Gateway 4-week selection carousel state
+  const carouselRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+
+  const checkCarouselScroll = () => {
+    if (carouselRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } = carouselRef.current;
+      setCanScrollLeft(scrollLeft > 6);
+      setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 6);
+    }
+  };
+
+  const handleScrollCarousel = (direction: 'left' | 'right', e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (carouselRef.current) {
+      const cardWidth = carouselRef.current.clientWidth / 4;
+      carouselRef.current.scrollBy({
+        left: direction === 'left' ? -cardWidth * 2 : cardWidth * 2,
+        behavior: 'smooth'
+      });
+      setTimeout(checkCarouselScroll, 250);
+    }
+  };
   const [editorPassword, setEditorPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [showUploadOrderValuesModal, setShowUploadOrderValuesModal] = useState(false);
@@ -206,6 +244,7 @@ export default function App() {
   const [editorUnlocked, setEditorUnlocked] = useState(false);
   const [gatewayPassword, setGatewayPassword] = useState('');
   const [gatewayPasswordError, setGatewayPasswordError] = useState(false);
+  const [showGatewayLockInput, setShowGatewayLockInput] = useState(false);
 
   const handleGatewayPasswordSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -439,8 +478,9 @@ export default function App() {
   const [returngoText, setReturngoText] = useState("");
   const [parcelninjaText, setParcelninjaText] = useState("");
   const [freshdeskText, setFreshdeskText] = useState("");
-  const [startDate, setStartDate] = useState("2026-10-19");
-  const [endDate, setEndDate] = useState("2026-10-25");
+  // Red highlight and default cohort selection always defaults on the most recent week
+  const [startDate, setStartDate] = useState(AVAILABLE_COHORT_WEEKS[0].start);
+  const [endDate, setEndDate] = useState(AVAILABLE_COHORT_WEEKS[0].end);
   const [editorReportImage, setEditorReportImage] = useState<string | null>(null);
 
   const [euphoriaParseMsg, setEuphoriaParseMsg] = useState<{ success: boolean; text: string } | null>(null);
@@ -643,6 +683,16 @@ export default function App() {
     if (/19\s*(?:oct|october)|(?:oct|october)\s*19/i.test(text) && /25\s*(?:oct|october)|(?:oct|october)\s*25/i.test(text)) {
       setStartDate("2026-10-19");
       setEndDate("2026-10-25");
+      return;
+    }
+    if (/26\s*(?:oct|october)|(?:oct|october)\s*26/i.test(text) && /(?:0?1\s*(?:nov|november)|(?:nov|november)\s*0?1)/i.test(text)) {
+      setStartDate("2026-10-26");
+      setEndDate("2026-11-01");
+      return;
+    }
+    if (/(?:0?2\s*(?:nov|november)|(?:nov|november)\s*0?2)/i.test(text) && /(?:0?8\s*(?:nov|november)|(?:nov|november)\s*0?8)/i.test(text)) {
+      setStartDate("2026-11-02");
+      setEndDate("2026-11-08");
       return;
     }
   };
@@ -955,8 +1005,14 @@ export default function App() {
         if (cp.inputs) {
           if (cp.inputs.shopifyText) setShopifyText(cp.inputs.shopifyText);
           if (cp.inputs.euphoriaText) setEuphoriaText(cp.inputs.euphoriaText);
-          if (cp.inputs.startDate) setStartDate(cp.inputs.startDate);
-          if (cp.inputs.endDate) setEndDate(cp.inputs.endDate);
+          // On gateway page, selection always defaults on the most recent cohort week
+          if (targetViewParam === 'dashboard' || targetViewParam === 'reports') {
+            if (cp.inputs.startDate) setStartDate(cp.inputs.startDate);
+            if (cp.inputs.endDate) setEndDate(cp.inputs.endDate);
+          } else {
+            setStartDate(AVAILABLE_COHORT_WEEKS[0].start);
+            setEndDate(AVAILABLE_COHORT_WEEKS[0].end);
+          }
         }
         if (cp.data.returngoSummary) setReturnGoSummary(cp.data.returngoSummary);
         if (cp.data.parcelninjaSummary) setParcelNinjaSummary(cp.data.parcelninjaSummary);
@@ -990,8 +1046,13 @@ export default function App() {
             if (parsed.inputs) {
               if (parsed.inputs.shopifyText) setShopifyText(parsed.inputs.shopifyText);
               if (parsed.inputs.euphoriaText) setEuphoriaText(parsed.inputs.euphoriaText);
-              if (parsed.inputs.startDate) setStartDate(parsed.inputs.startDate);
-              if (parsed.inputs.endDate) setEndDate(parsed.inputs.endDate);
+              if (targetViewParam === 'dashboard' || targetViewParam === 'reports') {
+                if (parsed.inputs.startDate) setStartDate(parsed.inputs.startDate);
+                if (parsed.inputs.endDate) setEndDate(parsed.inputs.endDate);
+              } else {
+                setStartDate(AVAILABLE_COHORT_WEEKS[0].start);
+                setEndDate(AVAILABLE_COHORT_WEEKS[0].end);
+              }
             }
             if (parsed.data.returngoSummary) setReturnGoSummary(parsed.data.returngoSummary);
             if (parsed.data.parcelninjaSummary) setParcelNinjaSummary(parsed.data.parcelninjaSummary);
@@ -1572,29 +1633,29 @@ export default function App() {
 
       <div className={`w-full flex flex-col items-center relative z-10 ${currentView === 'progression' ? 'p-0 max-w-full' : ''}`}>
         {currentView === 'home' && (
-          <div className="h-screen overflow-hidden flex flex-col items-center justify-center w-full max-w-6xl mx-auto px-4 py-2 text-center">
+          <div className="min-h-screen sm:h-screen overflow-y-auto sm:overflow-hidden flex flex-col items-center justify-center w-full max-w-7xl mx-auto px-4 py-4 sm:py-6 text-center">
             {/* Top outside badge - Editorial Style */}
             <motion.div 
               initial={{ opacity: 0, y: -15 }}
               animate={{ opacity: 1, y: 0 }}
-              className="inline-flex items-center gap-3 bg-white/5 backdrop-blur-xl border border-white/10 px-6 py-2 rounded-full mb-3 shadow-xl"
+              className="inline-flex items-center gap-3 bg-white/10 backdrop-blur-xl border border-white/15 px-7 py-2.5 rounded-full mb-4 shadow-2xl"
             >
-              <span className="font-display text-[#C41230] text-2xl tracking-tight leading-none">LEVI'S</span>
-              <div className="w-px h-5 bg-white/20" />
-              <span className="text-white/80 font-light tracking-[0.2em] uppercase text-xs sm:text-sm">South Africa Online</span>
+              <span className="font-display text-[#C41230] text-3xl tracking-tight leading-none">LEVI'S</span>
+              <div className="w-px h-6 bg-white/20" />
+              <span className="text-white/90 font-light tracking-[0.22em] uppercase text-xs sm:text-sm">South Africa Online</span>
             </motion.div>
 
-            {/* Jewel-accented ruby red card - Elite Glassmorphism */}
+            {/* Jewel-accented ruby red card - Elite Glassmorphism (Enlarged / Zoomed Container) */}
             <motion.div 
-              initial={{ opacity: 0, scale: 0.96 }}
+              initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.6, ease: "easeOut" }}
-              className="group relative w-full max-w-[820px]"
+              className="group relative w-full max-w-[1080px]"
             >
               {/* Floating Glows */}
-              <div className="absolute -inset-1 bg-gradient-to-r from-[#C41230] to-[#A00D24] rounded-[1.5rem] blur opacity-15 group-hover:opacity-30 transition duration-1000"></div>
+              <div className="absolute -inset-1.5 bg-gradient-to-r from-[#C41230] to-[#A00D24] rounded-[2rem] blur-lg opacity-20 group-hover:opacity-35 transition duration-1000"></div>
               
-              <div className="relative bg-[#0d0d0d]/45 backdrop-blur-3xl border border-white/10 rounded-[1.5rem] py-10 px-6 sm:px-10 flex flex-col items-center justify-between overflow-hidden min-h-[460px]">
+              <div className="relative bg-[#0d0d0d]/55 backdrop-blur-3xl border border-white/15 rounded-[2rem] py-10 sm:py-12 px-6 sm:px-12 flex flex-col items-center justify-between overflow-hidden min-h-[520px] shadow-2xl">
                 {/* Micro-textures on card */}
                 <div className="absolute inset-0 bg-noise opacity-10 pointer-events-none" />
                 
@@ -1602,65 +1663,89 @@ export default function App() {
                 <div className="absolute -top-40 -left-40 w-96 h-96 bg-red-600/15 rounded-full blur-[100px] pointer-events-none animate-pulse" />
                 <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-red-900/20 rounded-full blur-[100px] pointer-events-none" />
 
-                <h1 className="font-display text-3xl sm:text-4xl md:text-5xl text-white tracking-tight uppercase mb-6 leading-[0.95] drop-shadow-2xl">
-                  Customer Service
-                  <span className="block mt-1 text-xl sm:text-2xl font-serif italic normal-case tracking-normal text-red-100/60 font-light">
-                    Weekly Business Review
+                {/* EDITOR LOCK TAB SITUATED AT TOP-LEFT OF OUTER BORDER */}
+                <div className="absolute top-4 left-4 sm:top-5 sm:left-5 z-30">
+                  {!editorUnlocked ? (
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setShowGatewayLockInput(prev => !prev)}
+                        className="flex items-center gap-1.5 bg-black/60 hover:bg-black/90 text-white/80 hover:text-white px-3 py-1 rounded-full border border-white/20 text-[10px] font-mono tracking-wider transition-all cursor-pointer shadow-md backdrop-blur-md"
+                        title="Click to unlock report editor"
+                      >
+                        <Lock size={11} className="text-amber-300" />
+                        <span className="uppercase text-[9px] font-bold">Editor Lock</span>
+                      </button>
+
+                      {showGatewayLockInput && (
+                        <form
+                          onSubmit={handleGatewayPasswordSubmit}
+                          className="absolute top-full left-0 mt-2 bg-[#0d0d0d]/95 p-3 rounded-xl border border-white/20 shadow-2xl flex flex-col items-center gap-2 w-48 z-40 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
+                        >
+                          <div className="flex items-center justify-between w-full">
+                            <span className="text-[9.5px] font-bold text-slate-300 uppercase tracking-wider">Passcode</span>
+                            <span className="text-[8.5px] text-slate-500 font-mono">levis2026</span>
+                          </div>
+                          <input
+                            type="password"
+                            autoFocus
+                            value={gatewayPassword}
+                            onChange={(e) => {
+                              setGatewayPassword(e.target.value);
+                              setGatewayPasswordError(false);
+                            }}
+                            placeholder="Passcode..."
+                            className="w-full bg-black/60 border border-white/30 rounded px-2.5 py-1 text-xs text-white text-center font-mono focus:outline-none focus:border-red-500"
+                          />
+                          {gatewayPasswordError && (
+                            <span className="text-[8.5px] text-red-400 font-bold">Incorrect passcode</span>
+                          )}
+                          <div className="flex items-center gap-1.5 w-full mt-0.5">
+                            <button
+                              type="submit"
+                              className="flex-1 bg-[#C41230] hover:bg-red-700 text-white font-bold py-1 rounded text-[9.5px] tracking-wider uppercase transition-colors cursor-pointer shadow-xs"
+                            >
+                              Unlock
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setShowGatewayLockInput(false)}
+                              className="px-2 py-1 text-slate-400 hover:text-white text-[9.5px] rounded border border-white/10 cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </form>
+                      )}
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCurrentView('landing');
+                        setIsInputExpanded(true);
+                      }}
+                      className="flex items-center gap-1.5 bg-emerald-950/70 hover:bg-emerald-900/90 text-emerald-200 px-3 py-1 rounded-full border border-emerald-500/50 text-[9.5px] font-mono tracking-wider transition-all cursor-pointer shadow-md backdrop-blur-md"
+                      title="Open Report Editor"
+                    >
+                      <Unlock size={11} className="text-emerald-400" />
+                      <span className="uppercase font-bold">Editor Unlocked</span>
+                      <Sliders size={10} className="text-emerald-300 ml-0.5" />
+                    </button>
+                  )}
+                </div>
+
+                <h1 className="font-display text-4xl sm:text-5xl md:text-6xl text-white tracking-tight uppercase mb-8 leading-[0.95] drop-shadow-2xl">
+                  Weekly Business Review
+                  <span className="block mt-2 text-2xl sm:text-3xl font-serif italic normal-case tracking-normal text-red-100/70 font-light">
+                    Customer Service
                   </span>
                 </h1>
 
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5 w-full items-stretch">
-                  {/* BUTTON 1: REPORT EDITOR / PASSWORD OVERLAY (3 COLS) */}
-                  <div className="lg:col-span-3 mx-auto relative overflow-hidden bg-transparent text-white p-3 rounded-xl border border-white/10 w-full max-w-[200px] lg:max-w-none h-full min-h-[190px] flex flex-col items-center justify-center text-center">
-                    {!editorUnlocked ? (
-                      <form onSubmit={handleGatewayPasswordSubmit} className="flex flex-col items-center justify-center w-full h-full p-1 space-y-2">
-                        <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center border border-white/20">
-                          <Lock size={14} className="text-amber-300" />
-                        </div>
-                        <span className="text-[10px] font-bold tracking-wider uppercase text-white/90">Editor Lock</span>
-                        <input
-                          type="password"
-                          value={gatewayPassword}
-                          onChange={(e) => {
-                            setGatewayPassword(e.target.value);
-                            setGatewayPasswordError(false);
-                          }}
-                          placeholder="Passcode..."
-                          className="w-full bg-black/50 border border-white/20 rounded px-2 py-1 text-xs text-white text-center font-mono focus:outline-none focus:border-red-500"
-                        />
-                        {gatewayPasswordError && (
-                          <span className="text-[9px] text-red-400 font-bold">Incorrect (levis2026)</span>
-                        )}
-                        <button
-                          type="submit"
-                          className="w-full bg-[#C41230] hover:bg-red-700 text-white font-bold py-1 rounded text-[10px] tracking-wider uppercase transition-colors cursor-pointer shadow-sm"
-                        >
-                          Unlock
-                        </button>
-                      </form>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          setCurrentView('landing');
-                          setIsInputExpanded(true);
-                        }}
-                        className="group/btn relative overflow-hidden bg-white/10 hover:bg-white/20 text-white p-2.5 rounded-xl transition-all duration-300 flex flex-col items-center justify-center text-center cursor-pointer border border-emerald-500/40 w-full h-full shadow-md"
-                      >
-                        <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center mb-2 group-hover/btn:scale-105 transition-transform border border-emerald-400/40">
-                          <Sliders size={18} className="text-emerald-300 group-hover/btn:text-white transition-colors" />
-                        </div>
-                        <h3 className="text-xs font-bold tracking-widest uppercase mb-1 flex items-center gap-1.5 text-emerald-200">
-                          Editor <Unlock size={9} className="text-emerald-300" />
-                        </h3>
-                        <p className="text-[9px] text-emerald-300/80 uppercase tracking-tighter">Unlocked</p>
-                      </button>
-                    )}
-                  </div>
-
-                  {/* BUTTON 2: REPORT VIEWER (5 COLS - EXECUTIVE INSIGHT) - REDUCED HEIGHT & CENTERED */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full items-stretch">
+                  {/* BUTTON 1: REPORT VIEWER (6 COLS - EXECUTIVE INSIGHT) */}
                   <div
-                    onClick={handleOpenReportViewer}
-                    className="lg:col-span-5 group/btn relative overflow-hidden bg-white text-[#0a0a0a] p-4 sm:p-5 rounded-xl shadow-[0_15px_40px_-15px_rgba(0,0,0,0.5)] hover:shadow-[0_25px_50px_-15px_rgba(196,18,48,0.25)] transition-all duration-500 flex flex-col items-center justify-center text-center cursor-pointer border border-white my-auto min-h-[200px]"
+                    className="lg:col-span-6 group/btn relative overflow-hidden bg-white text-[#0a0a0a] p-6 sm:p-7 rounded-2xl shadow-[0_20px_50px_-15px_rgba(0,0,0,0.6)] hover:shadow-[0_30px_60px_-15px_rgba(196,18,48,0.3)] transition-all duration-500 flex flex-col items-center justify-between text-center border border-white min-h-[270px]"
                   >
                     {/* Interior glow for depth */}
                     <div className="absolute inset-0 bg-gradient-to-br from-white via-white to-gray-100" />
@@ -1678,65 +1763,170 @@ export default function App() {
                       transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
                     />
 
-                    <div className="relative z-10 flex flex-col items-center justify-center">
-                      <div className="inline-flex items-center gap-1.5 bg-red-50 px-2.5 py-0.5 rounded-full text-[9.5px] font-black tracking-[0.15em] uppercase mb-1.5 text-[#C41230] border border-red-100">
+                    <div className="relative z-10 flex flex-col items-center justify-center w-full">
+                      <div className="inline-flex items-center gap-1.5 bg-red-50 px-3 py-1 rounded-full text-[10px] font-black tracking-[0.16em] uppercase mb-2.5 text-[#C41230] border border-red-100 shadow-2xs">
                         <span className="w-1.5 h-1.5 rounded-full bg-[#C41230] animate-ping" />
                         <span>Executive Review Pack</span>
                       </div>
 
-                      <div className="w-10 h-10 rounded-full bg-[#0a0a0a] flex items-center justify-center mb-1.5 shadow-md group-hover/btn:scale-105 transition-transform">
-                        <FileText size={18} className="text-white" />
+                      <div className="w-13 h-13 rounded-full bg-[#0a0a0a] flex items-center justify-center mb-2.5 shadow-md group-hover/btn:scale-105 transition-transform">
+                        <FileText size={22} className="text-white" />
                       </div>
                       
-                      <h3 className="font-display text-lg sm:text-xl mb-1 tracking-tight uppercase leading-none">Report Viewer</h3>
-                      <p className="text-[11px] text-gray-500 max-w-xs mb-3 font-medium leading-snug">
-                        Live 4-page weekly review document with telemetry & SLA scorecards.
+                      <h3 className="font-display text-2xl sm:text-3xl mb-1.5 tracking-tight uppercase leading-none">Report Viewer</h3>
+                      <p className="text-xs sm:text-[13px] text-gray-500 max-w-sm mb-3.5 font-medium leading-relaxed">
+                        Live 4-page weekly review document with telemetry, SLA scorecards &amp; operations analysis.
                       </p>
 
-                      <div className="bg-[#C41230] text-white py-1.5 px-5 rounded-lg font-bold text-[11px] tracking-widest uppercase shadow-md group-hover/btn:bg-[#A00D24] transition-all inline-flex items-center gap-1.5">
+                      {/* 4-WEEK CAROUSEL SELECTION VIEW */}
+                      <div 
+                        className="w-full mb-3.5 px-0.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-between mb-2 px-1 text-[10px] font-bold">
+                          <span className="text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+                            <Calendar size={12} className="text-[#C41230]" />
+                            <span>Select Cohort Week:</span>
+                          </span>
+                          <span className="font-mono text-[#C41230] bg-red-50 border border-red-100 px-2 py-0.5 rounded font-bold inline-flex items-center gap-1">
+                            <span>Week {getWeekNumber(startDate)} ({startDate.slice(5)} &ndash; {endDate.slice(5)})</span>
+                            {startDate === AVAILABLE_COHORT_WEEKS[0].start && (
+                              <span className="text-[8.5px] bg-[#C41230] text-white px-1.5 py-0.2 rounded font-sans uppercase font-black tracking-wide">
+                                Latest
+                              </span>
+                            )}
+                          </span>
+                        </div>
+
+                        {/* Carousel Container with Left and Right scroll buttons */}
+                        <div className="relative flex items-center gap-1.5 w-full">
+                          {/* Left Navigation Chevron Button */}
+                          <button
+                            type="button"
+                            onClick={(e) => handleScrollCarousel('left', e)}
+                            disabled={!canScrollLeft}
+                            aria-label="Scroll left"
+                            className={`w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-full flex items-center justify-center shrink-0 border transition-all cursor-pointer shadow-xs ${
+                              canScrollLeft
+                                ? 'bg-white hover:bg-gray-100 text-gray-800 border-gray-300 hover:border-gray-400 active:scale-95'
+                                : 'bg-gray-100/60 text-gray-300 border-gray-200 cursor-not-allowed opacity-40'
+                            }`}
+                            title="Scroll to previous weeks"
+                          >
+                            <ChevronLeft size={16} />
+                          </button>
+
+                          {/* 4-Week Squares Carousel Track (Exactly 4 squares visible, snap scrolling) */}
+                          <div
+                            ref={carouselRef}
+                            onScroll={checkCarouselScroll}
+                            className="flex-1 flex gap-2 overflow-x-auto scrollbar-none snap-x snap-mandatory scroll-smooth py-1 px-0.5"
+                            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                          >
+                            {AVAILABLE_COHORT_WEEKS.map((w) => {
+                              const isSelected = startDate === w.start && endDate === w.end;
+                              return (
+                                <button
+                                  key={w.week}
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setStartDate(w.start);
+                                    setEndDate(w.end);
+                                  }}
+                                  className={`min-w-[calc((100%-24px)/4)] w-[calc((100%-24px)/4)] max-w-[calc((100%-24px)/4)] shrink-0 snap-start h-[64px] sm:h-[70px] rounded-xl font-mono transition-all cursor-pointer border flex flex-col items-center justify-center relative select-none ${
+                                    isSelected
+                                      ? 'bg-[#C41230] text-white border-[#C41230] shadow-md ring-2 ring-red-400/50 scale-[1.03] z-10'
+                                      : 'bg-gray-100/90 hover:bg-gray-200/90 text-gray-800 border-gray-200 hover:border-gray-300'
+                                  }`}
+                                  title={`Week ${w.week}: ${w.start} to ${w.end}`}
+                                >
+                                  <span className="font-display font-bold text-sm sm:text-base leading-none">
+                                    {w.label}
+                                  </span>
+                                  <span className={`text-[10px] sm:text-[10.5px] leading-tight mt-1 font-semibold ${
+                                    isSelected ? 'text-red-100' : 'text-gray-500'
+                                  }`}>
+                                    {w.dateLabel}
+                                  </span>
+                                  {w.week === AVAILABLE_COHORT_WEEKS[0].week && (
+                                    <span 
+                                      className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${isSelected ? 'bg-amber-300 animate-pulse' : 'bg-[#C41230]'}`} 
+                                      title="Most Recent Cohort" 
+                                    />
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {/* Right Navigation Chevron Button */}
+                          <button
+                            type="button"
+                            onClick={(e) => handleScrollCarousel('right', e)}
+                            disabled={!canScrollRight}
+                            aria-label="Scroll right"
+                            className={`w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-full flex items-center justify-center shrink-0 border transition-all cursor-pointer shadow-xs ${
+                              canScrollRight
+                                ? 'bg-white hover:bg-gray-100 text-gray-800 border-gray-300 hover:border-gray-400 active:scale-95'
+                                : 'bg-gray-100/60 text-gray-300 border-gray-200 cursor-not-allowed opacity-40'
+                            }`}
+                            title="Scroll to older weeks"
+                          >
+                            <ChevronRight size={16} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleOpenReportViewer}
+                        className="w-full bg-[#C41230] text-white py-2.5 px-6 rounded-xl font-bold text-xs sm:text-[13px] tracking-widest uppercase shadow-md hover:bg-[#A00D24] transition-all inline-flex items-center justify-center gap-2 cursor-pointer"
+                      >
                         {launchStatus?.active ? (
                           <>
-                            <RefreshCw size={12} className="animate-spin" />
-                            <span>Launching...</span>
+                            <RefreshCw size={14} className="animate-spin" />
+                            <span>Launching Week {getWeekNumber(startDate)}...</span>
                           </>
                         ) : (
                           <>
-                            <span>Launch Review Pack</span>
-                            <ChevronRight size={12} className="group-hover/btn:translate-x-1 transition-transform" />
+                            <span>Launch Review Pack (Week {getWeekNumber(startDate)})</span>
+                            <ChevronRight size={14} className="group-hover/btn:translate-x-1 transition-transform" />
                           </>
                         )}
-                      </div>
+                      </button>
                     </div>
                   </div>
 
-                  {/* BUTTON 3: 4-WEEK DEPARTMENT PROGRESSION GATEWAY (4 COLS) - LIGHTER TRANSPARENT BLUE & DIRECT ICON LINKS */}
-                  <div className="lg:col-span-4 group/prog relative overflow-hidden bg-blue-600/15 backdrop-blur-md text-white p-4 sm:p-5 rounded-xl shadow-[0_15px_40px_-15px_rgba(0,0,0,0.5)] hover:shadow-[0_25px_50px_-15px_rgba(0,56,118,0.35)] transition-all duration-500 flex flex-col items-center justify-between text-center border border-blue-400/30">
+                  {/* BUTTON 2: 4-WEEK DEPARTMENT PROGRESSION GATEWAY (6 COLS) */}
+                  <div className="lg:col-span-6 group/prog relative overflow-hidden bg-blue-600/15 backdrop-blur-md text-white p-6 sm:p-7 rounded-2xl shadow-[0_20px_50px_-15px_rgba(0,0,0,0.6)] hover:shadow-[0_30px_60px_-15px_rgba(0,56,118,0.4)] transition-all duration-500 flex flex-col items-center justify-between text-center border border-blue-400/35 min-h-[270px]">
                     {/* Interior glow for depth */}
                     <div className="absolute inset-0 bg-gradient-to-br from-blue-600/10 via-blue-500/5 to-transparent pointer-events-none" />
 
                     <div className="relative z-10 flex flex-col items-center w-full">
-                      {/* Note above Multi-Week Progression: Work-In-Progress */}
-                      <div className="inline-flex items-center gap-1.5 bg-amber-500/20 px-2.5 py-0.5 rounded-full text-[9px] font-black tracking-[0.15em] uppercase mb-1.5 text-amber-300 border border-amber-400/40 shadow-xs">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                        <span>Work-In-Progress</span>
+                      <div className="flex items-center gap-2 mb-2.5">
+                        <div className="inline-flex items-center gap-1.5 bg-amber-500/20 px-3 py-1 rounded-full text-[9.5px] font-black tracking-[0.16em] uppercase text-amber-300 border border-amber-400/40 shadow-xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                          <span>Work-In-Progress</span>
+                        </div>
+
+                        <div className="inline-flex items-center gap-1.5 bg-blue-500/20 px-3 py-1 rounded-full text-[10px] font-black tracking-[0.16em] uppercase text-blue-200 border border-blue-400/30">
+                          <TrendingUp size={12} className="text-blue-300" />
+                          <span>Multi-Week Progression</span>
+                        </div>
                       </div>
 
-                      <div className="inline-flex items-center gap-1.5 bg-blue-500/20 px-2.5 py-0.5 rounded-full text-[9.5px] font-black tracking-[0.15em] uppercase mb-1.5 text-blue-200 border border-blue-400/30">
-                        <TrendingUp size={11} className="text-blue-300" />
-                        <span>Multi-Week Progression</span>
-                      </div>
-
-                      <div className="w-10 h-10 rounded-full bg-blue-500/25 border border-blue-400/40 flex items-center justify-center mb-1.5 shadow-md group-hover/prog:scale-105 transition-transform">
-                        <Layers size={18} className="text-blue-200" />
+                      <div className="w-13 h-13 rounded-full bg-blue-500/25 border border-blue-400/40 flex items-center justify-center mb-2.5 shadow-md group-hover/prog:scale-105 transition-transform">
+                        <Layers size={22} className="text-blue-200" />
                       </div>
                       
-                      <h3 className="font-display text-lg sm:text-xl mb-1 tracking-tight uppercase leading-none text-white">4-Week Hub</h3>
-                      <p className="text-[11px] text-blue-100/80 max-w-sm mb-3 font-medium leading-snug">
-                        Compare WoW progression across reporting cohorts. Select department direct link:
+                      <h3 className="font-display text-2xl sm:text-3xl mb-1.5 tracking-tight uppercase leading-none text-white">4-Week Hub</h3>
+                      <p className="text-xs sm:text-[13px] text-blue-100/85 max-w-sm mb-4 font-medium leading-relaxed">
+                        Compare WoW progression across reporting cohorts. Direct department link:
                       </p>
 
-                      {/* Direct Department Quick-Launch Selector Pills (Serving as Direct Links) */}
-                      <div className="grid grid-cols-3 gap-2 w-full text-[10px] font-bold font-mono">
+                      {/* Direct Department Quick-Launch Selector Pills */}
+                      <div className="grid grid-cols-3 gap-2.5 w-full text-xs font-bold font-mono">
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1745,10 +1935,10 @@ export default function App() {
                             setCurrentView('progression');
                             window.scrollTo({ top: 0, behavior: 'smooth' });
                           }}
-                          className="py-2 px-1.5 bg-blue-950/60 hover:bg-blue-600 text-white rounded-lg border border-blue-400/40 hover:border-blue-300 transition-all flex flex-col items-center gap-1 cursor-pointer shadow-sm"
+                          className="py-2.5 px-2 bg-blue-950/60 hover:bg-blue-600 text-white rounded-xl border border-blue-400/40 hover:border-blue-300 transition-all flex flex-col items-center gap-1.5 cursor-pointer shadow-sm hover:scale-[1.02]"
                           title="View Freshdesk & Calls Only 4-Week Report"
                         >
-                          <Headphones size={14} className="text-blue-300" />
+                          <Headphones size={17} className="text-blue-300" />
                           <span className="truncate w-full text-center">Freshdesk</span>
                         </button>
 
@@ -1760,10 +1950,10 @@ export default function App() {
                             setCurrentView('progression');
                             window.scrollTo({ top: 0, behavior: 'smooth' });
                           }}
-                          className="py-2 px-1.5 bg-blue-950/60 hover:bg-emerald-600 text-white rounded-lg border border-blue-400/40 hover:border-emerald-400 transition-all flex flex-col items-center gap-1 cursor-pointer shadow-sm"
+                          className="py-2.5 px-2 bg-blue-950/60 hover:bg-emerald-600 text-white rounded-xl border border-blue-400/40 hover:border-emerald-400 transition-all flex flex-col items-center gap-1.5 cursor-pointer shadow-sm hover:scale-[1.02]"
                           title="View Parcelninja Only 4-Week Report"
                         >
-                          <Truck size={14} className="text-emerald-300" />
+                          <Truck size={17} className="text-emerald-300" />
                           <span className="truncate w-full text-center">Parcelninja</span>
                         </button>
 
@@ -1775,31 +1965,16 @@ export default function App() {
                             setCurrentView('progression');
                             window.scrollTo({ top: 0, behavior: 'smooth' });
                           }}
-                          className="py-2 px-1.5 bg-blue-950/60 hover:bg-amber-600 text-white rounded-lg border border-blue-400/40 hover:border-amber-400 transition-all flex flex-col items-center gap-1 cursor-pointer shadow-sm"
+                          className="py-2.5 px-2 bg-blue-950/60 hover:bg-amber-600 text-white rounded-xl border border-blue-400/40 hover:border-amber-400 transition-all flex flex-col items-center gap-1.5 cursor-pointer shadow-sm hover:scale-[1.02]"
                           title="View ReturnGO Only 4-Week Report"
                         >
-                          <RotateCcw size={14} className="text-amber-300" />
+                          <RotateCcw size={17} className="text-amber-300" />
                           <span className="truncate w-full text-center">ReturnGO</span>
                         </button>
                       </div>
                     </div>
                   </div>
                 </div>
-
-                {!user && (
-                  <motion.div 
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.5 }}
-                    className="mt-4 pt-2.5 border-t border-white/5 flex flex-col sm:flex-row items-center gap-3 w-full justify-between"
-                  >
-                    <span className="text-[10px] text-white/30 uppercase tracking-[0.25em] font-light">Authenticated Access Only</span>
-                    <button onClick={handleSignIn} className="bg-white/5 hover:bg-white/10 text-white/80 border border-white/10 text-[9.5px] font-bold tracking-widest uppercase py-2 px-5 rounded-full transition-all flex items-center gap-2">
-                      <Globe size={12} className="opacity-50" />
-                      Global SSO Login
-                    </button>
-                  </motion.div>
-                )}
               </div>
             </motion.div>
           </div>
@@ -1816,16 +1991,16 @@ export default function App() {
                 const repStart = report.startDate || report.data?.data?.reportingPeriod?.startDate || startDate;
                 const repEnd = report.endDate || report.data?.data?.reportingPeriod?.endDate || endDate;
 
-                if (report.data) {
-                  const clonedData = JSON.parse(JSON.stringify(report.data));
-                  if (clonedData.data) {
-                    clonedData.data.reportingPeriod = {
-                      startDate: repStart,
-                      endDate: repEnd
-                    };
-                  }
-                  setData(clonedData);
+                // 1. Try LocalStorage first
+                const cachedData = getCachedReport(report.id);
+                if (cachedData) {
+                  setData(cachedData);
+                } else if (report.data) {
+                  // 2. Fallback to report.data and cache it
+                  setData(report.data);
+                  setCachedReport(report.id, report.data);
                 }
+                
                 if (repStart) {
                   setStartDate(repStart);
                 }
@@ -2222,6 +2397,20 @@ export default function App() {
                     }`}
                   >
                     Week 44 (Oct 26 - Nov 01)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStartDate("2026-11-02");
+                      setEndDate("2026-11-08");
+                    }}
+                    className={`text-[10.5px] px-2 py-1 rounded font-medium border cursor-pointer transition-colors ${
+                      startDate === "2026-11-02" && endDate === "2026-11-08"
+                        ? "bg-[#003876] text-white border-[#003876]"
+                        : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
+                    }`}
+                  >
+                    Week 45 (Nov 02 - Nov 08)
                   </button>
                 </div>
               </div>
@@ -3250,6 +3439,40 @@ EXECUTIVE DISCUSSION & OPERATIONAL NOTES:
                   <span className="text-[10.5px] bg-blue-50 text-[#003876] font-semibold px-2 py-0.5 rounded-md border border-blue-100 font-mono">
                     {startDate} &ndash; {endDate}
                   </span>
+
+                  {/* Quick Week Switcher in Report Viewer Sticky Header */}
+                  <div className="inline-flex items-center gap-1 p-0.5 bg-blue-50/80 rounded-md border border-blue-200/60 ml-1">
+                    {[
+                      { week: 45, start: '2026-11-02', end: '2026-11-08', label: 'W45' },
+                      { week: 44, start: '2026-10-26', end: '2026-11-01', label: 'W44' },
+                      { week: 43, start: '2026-10-19', end: '2026-10-25', label: 'W43' },
+                      { week: 42, start: '2026-10-12', end: '2026-10-18', label: 'W42' },
+                      { week: 41, start: '2026-10-05', end: '2026-10-11', label: 'W41' },
+                      { week: 40, start: '2026-09-28', end: '2026-10-04', label: 'W40' },
+                      { week: 39, start: '2026-09-21', end: '2026-09-27', label: 'W39' },
+                    ].map((w) => {
+                      const isSelected = startDate === w.start && endDate === w.end;
+                      return (
+                        <button
+                          key={w.week}
+                          type="button"
+                          onClick={() => {
+                            setStartDate(w.start);
+                            setEndDate(w.end);
+                            fetchWBRData({ sDate: w.start, eDate: w.end });
+                          }}
+                          className={`text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-[#003876] text-white shadow-2xs'
+                              : 'text-[#003876] hover:bg-white hover:text-blue-900'
+                          }`}
+                          title={`Switch to Week ${w.week} (${w.start} to ${w.end})`}
+                        >
+                          {w.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-1.5 flex-wrap">

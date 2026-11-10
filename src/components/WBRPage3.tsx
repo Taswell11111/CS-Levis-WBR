@@ -131,7 +131,8 @@ export const WBRPage3: React.FC<WBRPage3Props> = ({
     39: { label: '21 Sep – 27 Sep', rate: 28.8, orders: 480, returns: 138 },
     40: { label: '28 Sep – 04 Oct', rate: 27.1, orders: 498, returns: 135 },
     41: { label: '05 Oct – 11 Oct', rate: 24.0, orders: 524, returns: 126 },
-    42: { label: '12 Oct – 18 Oct', rate: 21.3, orders: 429, returns: 91 }
+    42: { label: '12 Oct – 18 Oct', rate: 21.3, orders: 429, returns: 91 },
+    43: { label: '19 Oct – 25 Oct', rate: 19.6, orders: 429, returns: 84 }
   };
 
   const activeWeekNum = getWeekNumber(startDate);
@@ -366,6 +367,19 @@ export const WBRPage3: React.FC<WBRPage3Props> = ({
     let rmaSeq = 48201;
     let ordSeq = 10492;
 
+    const start = startDate ? new Date(startDate) : new Date();
+    const validStart = !isNaN(start.getTime());
+
+    const computeDynamicRmaDate = (offsetDays: number, hour: number, minute: number) => {
+      const base = validStart ? new Date(start) : new Date('2026-10-19');
+      base.setDate(base.getDate() + (offsetDays % 7));
+      const dd = String(base.getDate()).padStart(2, '0');
+      const mm = String(base.getMonth() + 1).padStart(2, '0');
+      const hh = String(hour).padStart(2, '0');
+      const min = String(minute).padStart(2, '0');
+      return `${dd}-${mm} ${hh}:${min}`;
+    };
+
     const addEntries = (count: number, status: string, reqAction: string, recDateGen: (idx: number) => string) => {
       for (let i = 0; i < count; i++) {
         const cust = customers[(i + rmaSeq) % customers.length];
@@ -373,17 +387,15 @@ export const WBRPage3: React.FC<WBRPage3Props> = ({
         const res = resolutions[(i + rmaSeq) % resolutions.length];
         const cour = couriers[(i + rmaSeq) % couriers.length];
         const prefix = cour === 'DPD Laser' ? 'DPD-41' : 'TCG-89';
-        const day = 14 + (i % 14);
-        const dayStr = day < 10 ? `0${day}` : `${day}`;
-        const monthStr = '09';
+        const dayOffset = i % 7;
 
         targetList.push({
           rmaNumber: `RET-${rmaSeq}`,
           orderName: `#LSSA-${ordSeq}`,
           customerName: cust.name,
           city: cust.city,
-          requestedDate: `${dayStr}-${monthStr} 09:${10 + ((i * 7) % 45)}`,
-          approvedDate: `${dayStr}-${monthStr} 14:${15 + ((i * 5) % 40)}`,
+          requestedDate: computeDynamicRmaDate(dayOffset, 9, 10 + ((i * 7) % 45)),
+          approvedDate: computeDynamicRmaDate(dayOffset, 14, 15 + ((i * 5) % 40)),
           receivedDate: recDateGen(i),
           primaryReason: rsn.primary,
           subReason: rsn.sub,
@@ -401,7 +413,7 @@ export const WBRPage3: React.FC<WBRPage3Props> = ({
     };
 
     // 1. Received at DC -> 96 entries
-    addEntries(96, 'Received at DC', 'QA inspection underway for settlement', (i) => `${16 + (i % 12)}-09 11:30`);
+    addEntries(96, 'Received at DC', 'QA inspection underway for settlement', (i) => computeDynamicRmaDate((i % 7) + 1, 11, 30));
     // 2. In Reverse Transit -> 23 entries
     addEntries(23, 'In Reverse Transit', 'Inbound linehaul manifest en route to CPT', () => 'In Transit');
     // 3. Approved & Waybill Sent (Shipments to be Sent) -> 58 entries
@@ -409,18 +421,22 @@ export const WBRPage3: React.FC<WBRPage3Props> = ({
     // 4. Pending / Created (17 Attention + 2 Pending Approval = 19 entries)
     addEntries(19, 'Pending / Created', 'Pending CS review & authorization', () => '—');
 
-    // Overlay live open RMAs if present
+    // If genuine live RMAs are available, strictly use them without synthetic padding
+    if (allRMAs && allRMAs.length > 0) {
+      return allRMAs;
+    }
     if (activeOpenRMAs && activeOpenRMAs.length > 0) {
-      const liveIds = new Set(activeOpenRMAs.map((r: any) => r.rmaNumber || r.id));
-      const filteredSynthetic = targetList.filter(r => !liveIds.has(r.rmaNumber));
-      return [...activeOpenRMAs, ...filteredSynthetic].slice(0, 196);
+      return activeOpenRMAs;
+    }
+    if (returngo?.rmas && returngo.rmas.length > 0) {
+      return returngo.rmas;
     }
 
-    return targetList;
+    return [];
   };
 
   // Filtered RMAs across full queue and optional reporting period scope
-  const rawSourceRMAs = buildComprehensiveActiveRMAs();
+  const rawSourceRMAs = (allRMAs && allRMAs.length > 0) ? allRMAs : buildComprehensiveActiveRMAs();
   
   const isRmaWithinPeriod = (rma: any) => {
     const dateStr = rma.requestedDate || rma.createdDate || rma.createdAt;
@@ -1331,9 +1347,31 @@ export const WBRPage3: React.FC<WBRPage3Props> = ({
                   displayedRMAs.map((rma: any, idx: number) => {
                     const rmaId = rma.rmaNumber || rma.id || `RET-482${idx + 10}`;
                     const orderRef = rma.orderName || rma.orderRef || `#LSSA-${10490 + idx}`;
-                    const reqDate = rma.requestedDate || rma.createdDate || '21-09 09:15';
-                    const appDate = rma.approvedDate || '21-09 14:30';
-                    const recDate = rma.receivedDate || (rma.status?.toLowerCase().includes('received') ? '23-09 11:20' : '—');
+                    
+                    const formatRmaDate = (raw: any, fallbackStr: string = '—') => {
+                      if (!raw) return fallbackStr;
+                      const str = String(raw).trim();
+                      if (str === '—' || str === '-' || str.toLowerCase() === 'pending') return fallbackStr;
+                      try {
+                        const d = new Date(str);
+                        if (!isNaN(d.getTime())) {
+                          const dd = String(d.getDate()).padStart(2, '0');
+                          const mm = String(d.getMonth() + 1).padStart(2, '0');
+                          const hh = String(d.getHours()).padStart(2, '0');
+                          const min = String(d.getMinutes()).padStart(2, '0');
+                          return `${dd}-${mm} ${hh}:${min}`;
+                        }
+                      } catch {}
+                      if (str.match(/^\d{2}-\d{2}/)) return str;
+                      return str.length > 16 ? str.slice(0, 16) : str;
+                    };
+
+                    const reqDate = formatRmaDate(rma.requestedDate || rma.createdDate || rma.createdAt, '—');
+                    const appDate = formatRmaDate(rma.approvedDate || rma.approvedAt, rma.status?.toLowerCase().includes('pending') ? 'Pending' : '—');
+                    const recDate = rma.receivedDate && rma.receivedDate !== '—'
+                      ? (rma.receivedDate.includes('Transit') ? 'In Transit' : formatRmaDate(rma.receivedDate || rma.receivedAt, '—'))
+                      : (rma.status?.toLowerCase().includes('received') ? 'Received at DC' : (rma.status?.toLowerCase().includes('transit') ? 'In Transit' : '—'));
+                    
                     const primaryR = rma.primaryReason || rma.reason || rma.returnReason || 'Does not fit';
                     const subR = rma.subReason || 'Size / Fit query';
                     const res = rma.resolution || rma.resolutionRequested || 'Refund to payment method';

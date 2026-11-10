@@ -424,11 +424,16 @@ export function generateStandaloneInteractiveHTML(options: HTMLGeneratorOptions)
         });
       };
 
-      // 4. Quick-jump navigation
+      // 4. Quick-jump navigation with viewport support
       window.scrollToPage = function(pageId) {
         const el = document.getElementById(pageId);
         if (el) {
           el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          const viewport = document.getElementById('wbr-canvas-viewport') || document.getElementById('wbr-canvas-wrapper');
+          if (viewport) {
+            const rect = el.getBoundingClientRect();
+            viewport.scrollTo({ top: viewport.scrollTop + rect.top - 80, behavior: 'smooth' });
+          }
         }
       };
 
@@ -458,15 +463,60 @@ export function generateStandaloneInteractiveHTML(options: HTMLGeneratorOptions)
         }
       });
 
+      // Generic Reusable Vanilla JavaScript Tab Controller
+      window.initGenericTabs = function() {
+        const tabButtons = document.querySelectorAll('button[data-tab-group]');
+        if (tabButtons.length === 0) return;
+
+        const groups = {};
+        tabButtons.forEach(btn => {
+          const g = btn.getAttribute('data-tab-group');
+          if (!groups[g]) groups[g] = [];
+          groups[g].push(btn);
+        });
+
+        Object.keys(groups).forEach(gName => {
+          const buttons = groups[gName];
+          buttons.forEach(btn => {
+            btn.addEventListener('click', function(e) {
+              e.preventDefault();
+              const targetId = btn.getAttribute('data-tab-target');
+              
+              buttons.forEach(b => {
+                b.classList.remove('bg-[#003876]', 'text-white', 'shadow-xs', 'shadow-2xs', 'font-bold', 'bg-amber-700', 'bg-rose-700');
+                b.classList.add('bg-slate-100', 'text-slate-700', 'hover:bg-slate-200');
+              });
+
+              btn.classList.remove('bg-slate-100', 'text-slate-700', 'hover:bg-slate-200');
+              btn.classList.add('bg-[#003876]', 'text-white', 'shadow-xs', 'font-bold');
+
+              if (targetId) {
+                const container = btn.closest('.relative, section, div, .a4-canvas') || document;
+                const contents = container.querySelectorAll('[data-tab-content="' + gName + '"]');
+                contents.forEach(content => {
+                  if (content.getAttribute('data-tab-id') === targetId) {
+                    content.style.display = 'block';
+                  } else {
+                    content.style.display = 'none';
+                  }
+                });
+              }
+            });
+          });
+        });
+      };
+
       // Document ready boot
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function() {
+          window.initGenericTabs();
           window.initP2Tabs();
           window.initP3Tabs();
           window.initP4Tabs();
           window.initZoom();
         });
       } else {
+        window.initGenericTabs();
         window.initP2Tabs();
         window.initP3Tabs();
         window.initP4Tabs();

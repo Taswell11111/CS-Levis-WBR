@@ -19,11 +19,15 @@ import {
   Package, 
   HelpCircle,
   ExternalLink,
-  Layers
+  Layers,
+  Tag,
+  ShoppingBag,
+  Percent,
+  Target
 } from 'lucide-react';
 import { WBRData } from '../types';
 import { TrendIcon } from './Trend';
-import { KeyHighlightsOverlay, HighlightItem } from './KeyHighlightsOverlay';
+import type { HighlightItem } from './KeyHighlightsOverlay';
 import { StrategicCommentarySection } from './StrategicCommentarySection';
 import { kpiCardVariants, kpiContainerVariants, sectionContainerVariants } from '../utils/motionVariants';
 import { getWeekNumber } from '../utils/dateUtils';
@@ -146,6 +150,18 @@ export const WBRPage1: React.FC<WBRPage1Props> = ({
   const netItemsSold = shopify?.netItemsSold ?? 728;
   const netItemsSoldWoW = shopify?.netItemsSoldWoW !== undefined && shopify?.netItemsSoldWoW !== null ? shopify.netItemsSoldWoW : 6.2;
 
+  // Shopify Marketing Campaigns & Discount Code Attribution
+  const shopifyCampaign = shopify?.campaign;
+  const topDiscountCodes = shopifyCampaign?.topDiscountCodes || [];
+  const campaignRevenueBreakdown = shopifyCampaign?.campaignRevenueBreakdown || [];
+  const discountedOrders = shopifyCampaign?.discountedOrders ?? 32;
+  const totalDiscountAmount = shopifyCampaign?.totalDiscountAmount ?? 14629;
+  const avgDiscountPerOrder = shopifyCampaign?.avgDiscountPerOrder ?? 360.8;
+  const unitsPerOrder = shopify?.unitsPerOrder ?? 1.55;
+  const fulfilledOrders = shopify?.fulfilled ?? shopify?.dispatched ?? 411;
+  const unfulfilledOrders = shopify?.unfulfilledOrders ?? shopify?.unfulfilled ?? 18;
+  const aov = shopify?.revenueAOV?.aov ?? (grossSales / (paidOrders || 1));
+
   // Dynamic Priority Focus Areas & Operational Remediations (Grounded in active content & date period)
   const contactDriversList = freshdesk?.contactDrivers || [];
   const primaryDriver = contactDriversList[0] || { name: 'Where is my order', value: Math.round(totalTickets * 0.28) };
@@ -218,13 +234,6 @@ export const WBRPage1: React.FC<WBRPage1Props> = ({
       className="a4-canvas bg-[#F8F9FA] text-slate-800 p-8 shadow-xl flex flex-col justify-between select-text relative border border-blue-500/30"
       style={{ minHeight: '210mm' }}
     >
-      <KeyHighlightsOverlay 
-        highlights={highlights} 
-        onAddHighlight={onAddHighlight} 
-        onUpdateHighlight={onUpdateHighlight} 
-        onDeleteHighlight={onDeleteHighlight} 
-      />
-
       {/* 1. TOP HEADER & BRANDING BAR (Sticky within Page 1 canvas) */}
       <div>
         <div className="sticky top-0 z-30 bg-[#F8F9FA]/95 backdrop-blur-md pb-4 pt-1 mb-6 flex items-center justify-between border-b-2 border-[#003876] shadow-2xs -mt-2 -mx-8 px-8">
@@ -805,6 +814,162 @@ export const WBRPage1: React.FC<WBRPage1Props> = ({
           </motion.div>
 
         </motion.div>
+
+        {/* 2.5 SHOPIFY COMMERCIAL & MARKETING INTELLIGENCE (DISCOUNT ATTRIBUTION & CAMPAIGNS) */}
+        <div className="bg-white rounded-lg border border-slate-200 p-5 shadow-xs mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 mb-4 border-b border-slate-100 gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-red-50 text-[#C41230] rounded-md border border-red-100">
+                <Tag size={16} />
+              </div>
+              <div>
+                <h2 className="text-xs sm:text-sm font-black text-[#003876] uppercase tracking-wider">
+                  Shopify Commercial &amp; Promotional Intelligence
+                </h2>
+                <p className="text-[10px] text-slate-500 font-medium">
+                  Discount code attribution, marketing campaigns, basket depth &amp; fulfillment health
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <span className="text-[10px] font-mono bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200">
+                UPO: <strong className="text-[#003876]">{unitsPerOrder}</strong> units
+              </span>
+              <span className="text-[10px] font-mono bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded border border-emerald-200">
+                AOV: <strong className="text-emerald-900">R {Number(aov).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* CARD A: DISCOUNT CODE PERFORMANCE */}
+            <div className="bg-slate-50/70 rounded-lg p-3.5 border border-slate-200 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                    <Percent size={13} className="text-[#C41230]" />
+                    <span>Top Discount Codes</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-500 font-medium">
+                    {discountedOrders} Orders Discounted
+                  </span>
+                </div>
+
+                <div className="space-y-1.5 mt-2">
+                  {topDiscountCodes.slice(0, 5).map((disc: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded border border-slate-200/80 text-[11px]">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="w-4 h-4 rounded-full bg-red-100 text-[#C41230] text-[9px] font-mono font-bold flex items-center justify-center shrink-0">
+                          {i + 1}
+                        </span>
+                        <span className="font-mono font-bold text-slate-900 truncate">{disc.code}</span>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0 font-mono text-[10.5px]">
+                        <span className="text-slate-600">{disc.orders} {disc.orders === 1 ? 'order' : 'orders'}</span>
+                        <span className="font-bold text-[#C41230]">R {Number(disc.amount).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {topDiscountCodes.length === 0 && (
+                    <div className="text-[11px] text-slate-400 italic py-3 text-center">No discount codes recorded this week</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-3 pt-2 border-t border-slate-200/70 flex items-center justify-between text-[10px] text-slate-600 font-mono">
+                <span>Total Discounts Given:</span>
+                <span className="font-black text-[#C41230]">R {Number(totalDiscountAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+
+            {/* CARD B: MARKETING CAMPAIGNS (UTM ATTRIBUTION) */}
+            <div className="bg-slate-50/70 rounded-lg p-3.5 border border-slate-200 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                    <Target size={13} className="text-[#003876]" />
+                    <span>Marketing Campaign Revenue</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-500 font-medium">
+                    UTM Attribution
+                  </span>
+                </div>
+
+                <div className="space-y-1.5 mt-2">
+                  {campaignRevenueBreakdown.slice(0, 5).map((camp: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded border border-slate-200/80 text-[11px]">
+                      <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0" />
+                        <span className="font-semibold text-slate-800 truncate text-[10.5px]" title={camp.campaign}>
+                          {camp.campaign.replace('No last-visit UTM recorded', 'Organic / Direct (No UTM)')}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2.5 shrink-0 font-mono text-[10.5px]">
+                        <span className="text-slate-500">{camp.orders} ord</span>
+                        <span className="font-bold text-[#003876]">R {Number(camp.revenue).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {campaignRevenueBreakdown.length === 0 && (
+                    <div className="text-[11px] text-slate-400 italic py-3 text-center">No active marketing UTM campaigns recorded</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-3 pt-2 border-t border-slate-200/70 flex items-center justify-between text-[10px] text-slate-600 font-mono">
+                <span>Avg Discount Per Order:</span>
+                <span className="font-bold text-slate-800">R {Number(avgDiscountPerOrder).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+
+            {/* CARD C: SHOPIFY FULFILLMENT & BASKET HEALTH */}
+            <div className="bg-slate-50/70 rounded-lg p-3.5 border border-slate-200 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                    <ShoppingBag size={13} className="text-emerald-700" />
+                    <span>Fulfillment &amp; Basket Depth</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-emerald-800 font-bold bg-emerald-100/60 px-1.5 py-0.5 rounded">
+                    {fulfilledOrders} Fulfilled
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <div className="bg-white p-2 rounded border border-slate-200/80">
+                    <span className="text-[9.5px] uppercase tracking-wider text-slate-500 font-bold block">Units Per Order (UPO)</span>
+                    <div className="text-lg font-black font-mono text-[#003876] mt-0.5">{unitsPerOrder}</div>
+                    <span className="text-[9px] text-slate-400 font-medium">Avg items / basket</span>
+                  </div>
+                  <div className="bg-white p-2 rounded border border-slate-200/80">
+                    <span className="text-[9.5px] uppercase tracking-wider text-slate-500 font-bold block">Net Items Sold</span>
+                    <div className="text-lg font-black font-mono text-slate-900 mt-0.5">{netItemsSold}</div>
+                    <span className="text-[9px] text-slate-400 font-medium">{netItemsSoldWoW > 0 ? `+${netItemsSoldWoW}%` : `${netItemsSoldWoW}%`} WoW</span>
+                  </div>
+                  <div className="bg-white p-2 rounded border border-slate-200/80">
+                    <span className="text-[9.5px] uppercase tracking-wider text-slate-500 font-bold block">Fulfilled Orders</span>
+                    <div className="text-lg font-black font-mono text-emerald-700 mt-0.5">{fulfilledOrders}</div>
+                    <span className="text-[9px] text-emerald-600 font-medium">Dispatched via DC</span>
+                  </div>
+                  <div className="bg-white p-2 rounded border border-slate-200/80">
+                    <span className="text-[9.5px] uppercase tracking-wider text-slate-500 font-bold block">Unfulfilled Pending</span>
+                    <div className={`text-lg font-black font-mono mt-0.5 ${unfulfilledOrders > 0 ? 'text-amber-700' : 'text-slate-400'}`}>
+                      {unfulfilledOrders}
+                    </div>
+                    <span className="text-[9px] text-slate-400 font-medium">In warehouse queue</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 pt-2 border-t border-slate-200/70 flex items-center justify-between text-[10px] text-slate-600 font-mono">
+                <span>Fulfillment Queue Rate:</span>
+                <span className="font-bold text-slate-800">
+                  {paidOrders > 0 ? `${((fulfilledOrders / paidOrders) * 100).toFixed(1)}% fulfilled` : '100%'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
 
         {/* 3. EXECUTIVE DISCUSSION & SYNTHESIS SECTION */}
         <div className="bg-white rounded-lg border border-blue-500/30 p-5 shadow-xs mb-6">
